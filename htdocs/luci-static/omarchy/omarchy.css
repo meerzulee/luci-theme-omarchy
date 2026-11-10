@@ -1,0 +1,2684 @@
+/*
+ * luci-theme-omarchy: skin and layout.
+ *
+ * Loaded after base.css (an unmodified copy of luci-theme-bootstrap's
+ * cascade.css), base-mobile.css and palettes.css. Everything that makes this
+ * theme look different from bootstrap is in this file, so the two base files
+ * can be replaced with newer upstream copies without merging.
+ *
+ * Selectors here deliberately repeat the base selectors: equal specificity,
+ * later file wins.
+ *
+ * Licensed to the public under the Apache License 2.0.
+ */
+
+/* Tokens
+ * ------ */
+
+:root {
+	/* Monospace first. No font is shipped: a machine running Omarchy has the
+	   first ones, everything else falls through to its own monospace. */
+	--font-mono: "JetBrainsMono Nerd Font", "JetBrains Mono", "CaskaydiaMono Nerd Font",
+		"Cascadia Mono", "SF Mono", ui-monospace, Menlo, Consolas, "DejaVu Sans Mono",
+		"Liberation Mono", monospace;
+	--font-sans: var(--font-mono);
+
+	--o-surface: var(--background-color-high);
+	--o-text: var(--text-color-high);
+	--o-bright: var(--text-color-highest);
+	--o-dim: var(--text-color-medium);
+	--o-hot: var(--primary-color-high);
+	--o-on-hot: var(--on-primary-color);
+	--o-focus: var(--o-hot);
+	--o-shadow: 0 14px 44px rgba(0, 0, 0, .45);
+
+	/* Omarchy's control states: the text colour laid over whatever is behind,
+	   which is what lets them sit on glass. */
+	--o-fill: hsla(var(--text-color-high-hsl), .04);
+	--o-fill-hot: hsla(var(--text-color-high-hsl), .08);
+	--o-field: var(--o-fill);
+	--o-raised: var(--o-fill-hot);
+	--o-line: hsla(var(--text-color-high-hsl), .14);
+	--o-edge: hsla(var(--text-color-high-hsl), .4);
+	--o-scrim: hsla(var(--background-color-high-hsl), .5);
+
+	/* Hyprland's defaults in Omarchy: 10px around windows, 2px borders. */
+	--o-gap: 10px;
+	--o-border: 2px;
+	--o-pad: 14px;
+	--o-side: 270px; /* the longest stock menu entry fits without being cut */
+	--o-bar-min: 26px;
+	--o-bar: 27px; /* real height of the bar, kept current by menu-omarchy.js */
+	--o-foot: 31px; /* real height of the status line, kept current likewise */
+	--o-stick: var(--o-bar); /* where a titlebar stops while the page scrolls */
+	--o-flow: var(--o-gap); /* space below a window in the plain flow of a page */
+	--o-blur: 14px;
+	--o-wall-blur: clamp(40px, 6vmax, 110px);
+	--o-ease: cubic-bezier(.23, 1, .32, 1); /* easeOutQuint */
+
+	--o-ico-prompt: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M2.5 3.5 7 8l-4.5 4.5M8.5 12.5h5' fill='none' stroke='%23000' stroke-width='1.8'/></svg>");
+}
+
+/* The icons of Omarchy's menu: Material Design Icons as Nerd Fonts numbers them,
+   only the glyphs used here (see tools/gen-icons.py). */
+@font-face {
+	font-family: "Omarchy Icons";
+	src: url("icons-3.woff2") format("woff2");
+	font-display: block;
+}
+
+.o-i {
+	flex: none;
+	width: 20px;
+	font-family: "Omarchy Icons";
+	font-size: 16px;
+	font-style: normal;
+	font-weight: normal;
+	line-height: 1;
+	text-align: center;
+}
+
+/* Square corners everywhere the base rounds them. */
+code, pre,
+input, textarea, select,
+.cbi-select, .cbi-select::before,
+.cbi-dropdown:not(.btn):not(.cbi-button),
+.cbi-dynlist > .item, .cbi-dynlist > .item::after,
+.control-group > input + :not(input):not(select),
+.control-group > select + :not(input):not(select),
+input[type="checkbox"]::before,
+.actions, .cbi-page-actions,
+.dropdown-menu,
+.tabs > li, .cbi-tabmenu > li,
+.tabs > li > a, .cbi-tabmenu > li > a,
+.cbi-tab-disabled[data-errors]::after,
+.breadcrumb, .modal,
+.item::after, .btn, .cbi-button, .btn.large,
+.cbi-tooltip, .zonebadge .cbi-tooltip,
+.cbi-progressbar, .cbi-progressbar > div,
+.alert-message, .label, header [data-indicator],
+.cbi-section-error,
+.ifacebox, .ifacebox .ifacebox-head, .ifacebadge, .zonebadge,
+.cbi-filebrowser {
+	border-radius: 0;
+}
+
+/* Page
+ * ---- */
+
+* {
+	scroll-margin-top: calc(var(--o-bar) + 40px);
+	scroll-margin-bottom: calc(var(--o-foot) + 12px);
+}
+
+/* no rubber band at the ends of the page */
+html,
+body {
+	overscroll-behavior: none;
+}
+
+html {
+	scrollbar-color: var(--o-edge) transparent;
+	scrollbar-width: thin;
+	/* a long page and a short one are equally wide, so that nothing shifts between them */
+	scrollbar-gutter: stable;
+}
+
+body {
+	padding: 0;
+	/* "->", "!=" and "::" must stay what was typed */
+	font-variant-ligatures: none;
+}
+
+/* The desktop behind the windows: the theme's wallpaper as a lock screen shows
+   it, reduced to its colours. Larger than the screen, so that the blur has
+   something to fade into at the edges. Static, so an open tab costs nothing. */
+body::before {
+	content: "";
+	position: fixed;
+	inset: calc(-2.5 * var(--o-wall-blur));
+	z-index: -1;
+	background: var(--o-wall) center / cover no-repeat;
+	filter: blur(var(--o-wall-blur));
+}
+
+/* A picture of the user's can be anything: use the window opacity that holds
+   up against a white (dark palettes) or black (light palettes) backdrop. */
+:root[data-o-wall] {
+	--o-glass: var(--o-glass-safe);
+	--o-pop: var(--o-pop-safe);
+}
+
+::selection {
+	background: var(--o-hot);
+	color: var(--o-on-hot);
+}
+
+a:hover {
+	text-underline-offset: 3px;
+}
+
+a:focus {
+	outline: 0;
+}
+
+a:focus-visible {
+	outline: 1px solid var(--o-focus);
+	outline-offset: 2px;
+}
+
+h1, h2, h3, legend, h4, h5, h6 {
+	color: var(--o-bright);
+}
+
+h2 {
+	margin-bottom: 8px;
+	font-size: 17px;
+	line-height: 26px;
+}
+
+h3, legend {
+	font-size: 14px;
+	line-height: 26px;
+}
+
+h4 {
+	font-size: 13px;
+	line-height: 24px;
+}
+
+h5, h6 {
+	font-size: 13px;
+	line-height: 22px;
+}
+
+/* the page title reads like a prompt */
+#maincontent h2::before {
+	content: "\276f\a0";
+	color: var(--o-hot);
+}
+
+.cbi-map-descr,
+.cbi-section-descr,
+.cbi-tab-descr {
+	color: var(--o-dim);
+}
+
+.cbi-map-descr {
+	max-width: 100ch;
+	margin-bottom: 14px;
+}
+
+hr {
+	border-bottom-color: var(--o-line);
+}
+
+code {
+	background-color: var(--o-raised);
+}
+
+pre {
+	background-color: var(--o-raised);
+	border-color: var(--o-line);
+}
+
+textarea, #syslog,
+.uci-dialog del, .uci-dialog ins, .uci-dialog var {
+	font-family: var(--font-mono);
+}
+
+kbd {
+	padding: 0 4px;
+	border: 1px solid var(--o-edge);
+	color: var(--o-text);
+	font: inherit;
+	font-size: 10px;
+}
+
+/* Bar
+ * ---
+ * Workspaces on the left, the router's clock in the middle, state on the right.
+ */
+
+header {
+	display: grid;
+	grid-template-columns: 1fr auto 1fr;
+	gap: 0 var(--o-gap);
+	min-height: var(--o-bar-min);
+	margin: 0;
+	padding: 0 var(--o-gap) 0 0;
+	/* windows scroll underneath, so this cannot be as see-through as they are */
+	background: var(--o-pop);
+	-webkit-backdrop-filter: blur(var(--o-blur));
+	backdrop-filter: blur(var(--o-blur));
+	border-bottom: 0;
+	box-shadow: none;
+	color: var(--o-dim);
+	font-size: 12px;
+}
+
+header a {
+	color: inherit;
+	text-shadow: none;
+}
+
+.o-bar-left,
+.o-bar-right {
+	display: flex;
+	flex-wrap: wrap;
+	min-width: 0;
+}
+
+.o-bar-right {
+	align-items: center;
+	justify-content: flex-end;
+	gap: 4px 12px;
+}
+
+.o-bar-mid {
+	display: flex;
+	align-items: center;
+	color: var(--o-bright);
+	font-weight: bold;
+	white-space: nowrap;
+}
+
+#o-launch {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 34px;
+	min-height: var(--o-bar-min);
+	background: transparent;
+	box-shadow: none;
+	color: var(--o-hot);
+}
+
+#o-launch::before {
+	content: "";
+	width: 16px;
+	height: 16px;
+	background: currentColor;
+	-webkit-mask: var(--o-ico-prompt) center / contain no-repeat;
+	mask: var(--o-ico-prompt) center / contain no-repeat;
+}
+
+#o-launch:hover,
+#o-launch:focus-visible {
+	background: var(--o-hot);
+	color: var(--o-on-hot);
+}
+
+header .brand {
+	display: flex;
+	align-items: center;
+	float: none;
+	margin: 0;
+	padding: 0 10px 0 4px;
+	color: var(--o-bright);
+	font-size: 12px;
+	font-weight: bold;
+	line-height: 1;
+}
+
+header .brand:hover {
+	background: transparent;
+	color: var(--o-hot);
+}
+
+#topmenu {
+	display: flex;
+	flex-wrap: wrap;
+	float: none;
+	margin: 0;
+	list-style: none;
+}
+
+#topmenu > li {
+	display: flex;
+	float: none;
+}
+
+#topmenu > li > a {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	min-height: var(--o-bar-min);
+	padding: 0 9px;
+	color: var(--o-dim);
+	line-height: 1;
+}
+
+#topmenu > li > a > .o-i {
+	width: auto;
+	font-size: 15px;
+}
+
+#topmenu > li:hover > a,
+#topmenu > li:focus-within > a {
+	background: var(--o-field);
+	color: var(--o-bright);
+}
+
+/* the workspace in view: underlined like the active one in a bar */
+#topmenu > li.active > a {
+	background: transparent;
+	box-shadow: inset 0 -2px var(--o-hot);
+	color: var(--o-hot);
+}
+
+#topmenu .dropdown-menu {
+	top: 100%;
+	min-width: 190px;
+	padding: 4px 0;
+	background: var(--o-surface);
+	border: var(--o-border) solid var(--o-hot);
+	box-shadow: var(--o-shadow);
+	transform-origin: 0 0;
+}
+
+#topmenu > li:focus-within > .dropdown-menu {
+	left: 0;
+}
+
+/* panels grow out of the bar */
+#topmenu > li:hover > .dropdown-menu,
+#topmenu > li:focus-within > .dropdown-menu {
+	animation: o-grow .18s var(--o-ease);
+}
+
+#topmenu .dropdown-menu a {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 5px 14px 5px 10px;
+	white-space: nowrap;
+	color: var(--o-text);
+	line-height: 18px;
+	text-shadow: none;
+}
+
+#topmenu .dropdown-menu a:hover,
+#topmenu .dropdown-menu a:focus-visible {
+	background: var(--o-hot);
+	background-image: none;
+	box-shadow: none;
+	color: var(--o-on-hot);
+	outline: 0;
+}
+
+#indicators {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 4px 6px;
+}
+
+header [data-indicator] {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	height: 18px;
+	margin: 0;
+	padding: 0 7px;
+	background: transparent;
+	border: 1px solid var(--o-line);
+	color: var(--o-dim);
+	font-size: 11px;
+	font-weight: normal;
+	line-height: 1;
+	text-transform: none;
+}
+
+header [data-indicator][data-style="active"] {
+	background: transparent;
+	border-color: var(--o-hot);
+	color: var(--o-hot);
+}
+
+header [data-indicator][data-clickable]:hover {
+	border-color: var(--o-hot);
+	color: var(--o-bright);
+}
+
+/* unsaved changes are the one thing in the bar that asks for attention */
+header [data-indicator="uci-changes"][data-style="active"],
+header [data-indicator="uci-changes"][data-style="active"]:hover {
+	background: var(--o-hot);
+	color: var(--o-on-hot);
+}
+
+header [data-indicator="poll-status"][data-style="active"]::before {
+	content: "";
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: currentColor;
+	animation: o-pulse 2s ease-in-out infinite;
+}
+
+@keyframes o-pulse {
+	50% { opacity: .25; }
+}
+
+@keyframes o-grow {
+	from { opacity: 0; transform: scale(.94, .87); }
+}
+
+/* the way a window opens in Omarchy: popin 87% */
+@keyframes o-pop {
+	from { opacity: 0; transform: scale(.87); }
+}
+
+@keyframes o-wall-in {
+	from { opacity: 0; transform: scale(1.12); }
+}
+
+@keyframes o-keep {
+	from, to { opacity: 1; }
+}
+
+@keyframes o-wait {
+	from, to { opacity: 0; }
+}
+
+@keyframes o-late {
+	from { visibility: hidden; }
+}
+
+@keyframes o-show {
+	to { visibility: visible; }
+}
+
+/* Changing page: a picture of the page before stays up while the next one is
+   drawn, until menu-omarchy.js says it is complete. The time here is what a slow
+   view gets before it is shown as far as it came. Where the browser cannot do
+   this (Firefox for now), the layout at least stays where it is. */
+@view-transition {
+	navigation: auto;
+}
+
+:root[data-o-hold]::view-transition-old(root),
+:root[data-o-hold]::view-transition-new(root) {
+	mix-blend-mode: normal;
+	animation-duration: 1s;
+}
+
+:root[data-o-hold]::view-transition-old(root) {
+	animation-name: o-keep;
+}
+
+:root[data-o-hold]::view-transition-new(root) {
+	animation-name: o-wait;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	header [data-indicator="poll-status"][data-style="active"]::before,
+	#topmenu .dropdown-menu,
+	body::before,
+	.modal,
+	.o-launcher-box,
+	#view .cbi-section,
+	#view .cbi-map-tabbed {
+		animation: none !important;
+	}
+}
+
+#o-tray {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.o-pill {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 5px;
+	font-size: 12px;
+	white-space: nowrap;
+	cursor: default;
+}
+
+.o-pill .o-i {
+	align-self: center;
+	width: auto;
+	font-size: 14px;
+}
+
+.o-pill b {
+	color: var(--o-text);
+	font-weight: normal;
+}
+
+.o-pill[data-level="warn"] b {
+	box-shadow: 0 2px var(--warn-color-high);
+}
+
+.o-pill[data-level="crit"] b {
+	box-shadow: 0 2px var(--error-color-high);
+	color: var(--error-color-high);
+}
+
+/* the menu for switching themes */
+.o-theme-btn {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	height: 26px;
+	padding: 0 8px;
+	background: transparent;
+	box-shadow: none;
+	color: inherit;
+	font-size: 12px;
+	white-space: nowrap;
+}
+
+.o-theme-btn .o-i {
+	width: auto;
+	color: var(--o-hot);
+	font-size: 15px;
+}
+
+.o-theme-btn:hover,
+.o-theme-btn:focus-visible {
+	background: var(--o-field);
+	color: var(--o-bright);
+}
+
+.o-logout,
+.o-gear {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	padding: 0;
+	background: transparent;
+	box-shadow: none;
+	color: inherit;
+}
+
+.o-gear {
+	margin-right: -8px;
+}
+
+.o-logout:hover,
+.o-logout:focus-visible {
+	background: var(--error-color-high);
+	color: var(--on-error-color);
+	text-decoration: none;
+}
+
+.o-gear:hover,
+.o-gear:focus-visible {
+	background: var(--o-hot);
+	color: var(--o-on-hot);
+}
+
+/* Desk
+ * ----
+ * Windows floating over the backdrop: the pages of the current workspace, then
+ * one window for every widget of the page. Nothing here may blur, fade or
+ * transform: that would give each window a stacking context and put open
+ * dropdowns underneath the next one. The glass needs none of it, the backdrop
+ * is blurred already.
+ */
+
+.o-desk {
+	display: flex;
+	flex: 1 0 auto;
+	align-items: stretch;
+	gap: var(--o-gap);
+	width: 100%;
+	max-width: 1760px;
+	margin: 0 auto;
+	padding: var(--o-gap);
+}
+
+#maincontent {
+	flex: 1 1 0;
+	min-width: 0;
+	max-width: none;
+	margin: 0;
+}
+
+/* Error pages and the like are not views: no widgets, so one window. */
+#maincontent:not(:has(> #view)) {
+	padding: var(--o-pad);
+}
+
+#o-side,
+#maincontent:not(:has(> #view)),
+#view .cbi-section:not(.cbi-section .cbi-section):not([data-tab-title]),
+#view .cbi-map-tabbed,
+#view div:not(.cbi-section div):has(> .cbi-section[data-tab-title]) {
+	background: var(--o-glass);
+	border: var(--o-border) solid var(--o-win, var(--o-edge));
+	transition: border-color .16s var(--o-ease);
+}
+
+/* One window is active at a time, as under Hyprland: the last one the pointer or
+   the keyboard went to (menu-omarchy.js marks it), the first widget until then. */
+.o-on,
+.o-desk:not(:has(.o-on)) #view > .cbi-section:first-child,
+.o-desk:not(:has(.o-on)) #o-home-top > .cbi-section:first-child,
+.o-desk:not(:has(.o-on)) #view :is(h2, .cbi-map-descr):not(.cbi-section *) + :is(.cbi-section, .cbi-map-tabbed, div:has(> .cbi-section[data-tab-title])) {
+	--o-win: var(--o-hot);
+}
+
+/* Kept free from the first moment, or the page jumps aside when the menu arrives. */
+#o-side:empty {
+	visibility: hidden;
+}
+
+/* The side panel reads like an Omarchy menu. */
+#o-side {
+	display: flex;
+	flex: 0 0 var(--o-side);
+	flex-direction: column;
+	align-self: flex-start;
+	/* one width on every page, whatever the names in it */
+	min-width: 0;
+	position: sticky;
+	top: calc(var(--o-bar) + var(--o-gap));
+	max-height: calc(100vh - var(--o-bar) - var(--o-foot) - 2 * var(--o-gap));
+	padding: 12px 10px 10px;
+}
+
+#o-side > h3 {
+	margin: 0 0 8px 8px;
+	color: var(--o-dim);
+	font-size: 13px;
+	font-weight: normal;
+	line-height: 20px;
+}
+
+#o-side > h3::after {
+	content: "\2026";
+}
+
+#o-side > ul {
+	min-height: 0;
+	margin: 0;
+	overflow-y: auto;
+	list-style: none;
+}
+
+#o-side li {
+	color: inherit;
+}
+
+#o-side a {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	position: relative;
+	padding: 7px 26px 7px 8px;
+	color: var(--o-text);
+}
+
+#o-side a > span {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+#o-side a:hover,
+#o-side a:focus-visible {
+	background: var(--o-fill-hot);
+	color: var(--o-bright);
+	outline: 0;
+	text-decoration: none;
+}
+
+#o-side .active > a {
+	background: var(--o-fill-hot);
+	color: var(--o-hot);
+}
+
+/* a page that opens onto more pages */
+#o-side .o-more > a::after {
+	content: "\F0142";
+	position: absolute;
+	top: 9px;
+	right: 6px;
+	color: var(--o-dim);
+	font-family: "Omarchy Icons";
+	font-size: 16px;
+	line-height: 1;
+}
+
+/* Panels
+ * ------
+ * Inside a window or a dialog a section is a bordered box whose title sits on
+ * its top border. The box under the pointer, or the one holding the keyboard
+ * focus, takes the accent.
+ */
+
+.cbi-section {
+	--o-frame: var(--o-line);
+	--o-frame-fg: var(--o-dim);
+
+	min-width: 0;
+	margin: 16px 0 18px;
+	padding: 16px var(--o-pad) 2px;
+	border: 1px solid var(--o-frame);
+}
+
+.cbi-section:first-child {
+	margin-top: 8px;
+}
+
+.cbi-section:focus-within {
+	--o-frame: var(--o-edge);
+	--o-frame-fg: var(--o-hot);
+}
+
+/* only the innermost panel counts */
+.cbi-section:focus-within:has(.cbi-section:focus-within) {
+	--o-frame: var(--o-line);
+	--o-frame-fg: var(--o-dim);
+}
+
+@media (hover: hover) {
+	/* focus follows the pointer, unless the keyboard is in a panel */
+	:root:not(:has(.cbi-section:focus-within)) .cbi-section:hover:not(:has(.cbi-section:hover)) {
+		--o-frame: var(--o-edge);
+		--o-frame-fg: var(--o-hot);
+	}
+}
+
+/* On glass a title cannot mask the border behind it, so a titled panel gives up
+   its top edge and the title row draws that edge again, either side of the text. */
+.cbi-section:not(fieldset):has(> :is(h3, legend):first-child) {
+	border-top-color: transparent;
+}
+
+.cbi-section:not(fieldset) > :is(h3, legend):first-child {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	min-width: 0;
+	/* up by the panel padding, the border and half of the line height */
+	margin: -27px calc(-1 * var(--o-pad) - 1px) 6px;
+	padding: 0;
+	color: var(--o-frame-fg);
+	font-size: 13px;
+	line-height: 20px;
+}
+
+.cbi-section:not(fieldset) > :is(h3, legend):first-child::before,
+.cbi-section:not(fieldset) > :is(h3, legend):first-child::after {
+	content: "";
+	align-self: flex-start;
+	height: 1px;
+	margin-top: 10px;
+	background: var(--o-frame);
+}
+
+.cbi-section:not(fieldset) > :is(h3, legend):first-child::before {
+	flex: 0 0 7px;
+}
+
+.cbi-section:not(fieldset) > :is(h3, legend):first-child::after {
+	flex: 1;
+	min-width: 7px;
+}
+
+/* a real fieldset puts its legend on the border by itself */
+fieldset.cbi-section > legend:first-child {
+	width: fit-content;
+	max-width: calc(100% - 14px);
+	margin: 0 0 6px -7px;
+	padding: 0 7px;
+	color: var(--o-frame-fg);
+	font-size: 13px;
+	line-height: 20px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* a tab pane that is not showing is often a panel itself: it must not keep
+   its frame and spacing while the base collapses its height */
+[data-tab-title]:not([data-tab-active="true"]) {
+	margin-top: 0;
+	margin-bottom: 0;
+	padding-top: 0;
+	padding-bottom: 0;
+	border-width: 0;
+}
+
+/* Windows
+ * -------
+ * Every widget of a page is a window: solid titlebar in the colours of the
+ * theme, as Omarchy 4.5 draws them, glass below it. Tabs take the place of the
+ * title when a window holds several panes.
+ */
+
+#view .cbi-section:not(.cbi-section .cbi-section):not([data-tab-title]),
+#view .cbi-map-tabbed,
+#view div:not(.cbi-section div):has(> .cbi-section[data-tab-title]) {
+	margin: 0 0 var(--o-flow);
+}
+
+#view .cbi-section:not(.cbi-section .cbi-section):not([data-tab-title]) {
+	padding: var(--o-pad);
+}
+
+/* a window opens the way Omarchy opens one, on the first load only: a form that
+   is drawn again after every change must not flicker */
+[data-o-first] body:not(.o-settled) #view .cbi-section:not(.cbi-section .cbi-section):not([data-tab-title]),
+[data-o-first] body:not(.o-settled) #view .cbi-map-tabbed {
+	animation: o-pop .2s var(--o-ease);
+}
+
+/* Stuck to the top of the window, so it has to hide what scrolls underneath. */
+#view .cbi-section:not(.cbi-section .cbi-section):not(fieldset):not([data-tab-title]) > :is(h3, legend):first-child,
+#view .cbi-section:not(.cbi-section .cbi-section):not([data-tab-title]) > .cbi-title:first-child {
+	position: sticky;
+	top: var(--o-stick);
+	z-index: 2;
+	display: flex;
+	align-items: center;
+	margin: calc(-1 * var(--o-pad)) calc(-1 * var(--o-pad)) var(--o-pad);
+	padding: 4px var(--o-pad);
+	background: var(--o-surface);
+	color: var(--o-text);
+	font-size: 12px;
+	font-weight: normal;
+	line-height: 20px;
+}
+
+#view .cbi-section:not(.cbi-section .cbi-section):not(fieldset):not([data-tab-title]) > :is(h3, legend):first-child::before,
+#view .cbi-section:not(.cbi-section .cbi-section):not(fieldset):not([data-tab-title]) > :is(h3, legend):first-child::after {
+	content: none;
+}
+
+/* Status overview: the title shares its row with a Hide/Show switch. */
+.cbi-section > .cbi-title:first-child > h3 {
+	flex: 1;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	margin: 0;
+	color: inherit;
+	font: inherit;
+}
+
+.cbi-section > .cbi-title:first-child > h3 > .label {
+	margin: 0;
+}
+
+/* a pane is the body of its window */
+#view .cbi-section[data-tab-title][data-tab-active="true"] {
+	margin: 0;
+	padding: var(--o-pad) var(--o-pad) 4px;
+	border: 0;
+}
+
+#view .cbi-section[data-tab-title] > :is(h3, legend):first-child {
+	display: block;
+	margin: 0 0 8px;
+	color: var(--o-dim);
+	font-size: 13px;
+	line-height: 20px;
+}
+
+#view .cbi-section[data-tab-title] > :is(h3, legend):first-child::before,
+#view .cbi-section[data-tab-title] > :is(h3, legend):first-child::after {
+	content: none;
+}
+
+/* LuCI puts the tabs in front of the element holding the panes: they are the
+   titlebar of the window that follows */
+#view .cbi-tabmenu:not(.cbi-section .cbi-tabmenu) {
+	position: sticky;
+	top: var(--o-stick);
+	z-index: 2;
+	margin: 0;
+	padding: 0 6px;
+	background: var(--o-surface);
+	border: var(--o-border) solid var(--o-edge);
+	border-bottom: 0;
+}
+
+#view .cbi-tabmenu:not(.cbi-section .cbi-tabmenu) + * {
+	border-top: 0;
+}
+
+/* The title of the page and what it says about itself. */
+#maincontent > h2,
+#view h2:not(.cbi-section h2),
+#view .cbi-map-descr:not(.cbi-section .cbi-map-descr) {
+	max-width: none;
+	margin: 0 0 var(--o-gap);
+	padding: 8px var(--o-pad);
+	background: var(--o-glass);
+	border: var(--o-border) solid var(--o-edge);
+}
+
+#view h2:not(.cbi-section h2):has(+ .cbi-map-descr) {
+	margin-bottom: 0;
+	padding-bottom: 2px;
+	border-bottom: 0;
+}
+
+#view h2:not(.cbi-section h2) + .cbi-map-descr {
+	padding-top: 0;
+	border-top: 0;
+}
+
+/* Whatever else a page sets at top level must not lie on the bare backdrop. A
+   wrapper around sections stays invisible: the sections are the windows. */
+:is(#view, #view > .cbi-map) > :not(.cbi-map, .cbi-section, .cbi-map-tabbed, .cbi-tabmenu, h2, .cbi-map-descr, .cbi-page-actions, .alert-message, .spinning, br, hr, button, .btn, .cbi-button, script, style, :empty, :has(.cbi-section)) {
+	margin: 0 0 var(--o-flow);
+	padding: var(--o-pad);
+	background: var(--o-glass);
+	border: var(--o-border) solid var(--o-edge);
+}
+
+/* Bare text a view hands back, like "No rules loaded". Inline, its padding and
+   border would lie over whatever is above it. */
+:is(#view, #view > .cbi-map) > :is(em, strong, span, a, b, i, small, code):not(.btn, .cbi-button, :empty) {
+	display: block;
+}
+
+/* Stock has this 15% down the screen, so that the page jumps up when it goes.
+   It shows only if the view really takes a while. */
+#view > div.spinning:first-child {
+	margin: 0;
+	padding: 8px 14px;
+	background: var(--o-glass);
+	border: var(--o-border) solid var(--o-edge);
+	visibility: visible;
+	animation: o-late 1ms .5s backwards;
+}
+
+/* A widget switched off in the settings has no window at all, and neither has
+   one just switched on, until the next poll fills it. */
+[data-o-view="admin-status-overview"] #view .cbi-section:has(> .cbi-title > h3 > .label.notice),
+[data-o-view="admin-status-overview"] #view .cbi-section:has(> .cbi-title + div:empty) {
+	display: none;
+}
+
+/* The home screen shows when it is complete, or anyway after a while. */
+[data-o-view="admin-status-overview"] #view:not(.o-home-ready) {
+	visibility: hidden;
+	animation: o-show 1ms 2s forwards;
+}
+
+/* Home
+ * ----
+ * The status overview is the home screen. The first widget, the router itself,
+ * is drawn the way fastfetch draws a machine; the others stack up into as many
+ * columns as fit. Multiple columns need no script and leave no holes under the
+ * shorter windows.
+ */
+
+#o-home-cols {
+	columns: 400px 4;
+	column-gap: var(--o-gap);
+}
+
+#o-home-cols > * {
+	break-inside: avoid;
+}
+
+/* a table with this many columns does not fit into one of them */
+#o-home-cols > :has(.table .th:nth-child(6)) {
+	column-span: all;
+}
+
+/* In a window too narrow for them these tables scroll, the page does not.
+   There is no dropdown in them that this could cut off. */
+#o-devices > div:last-child,
+#o-home-cols > :has(.table .th:nth-child(6)) > div:last-child {
+	overflow-x: auto;
+}
+
+/* Hiding and showing a widget moved to the settings panel. A widget that is
+   switched off goes away entirely. */
+/* the base sets its display inline */
+.cbi-section > .cbi-title:first-child > h3 > .label {
+	display: none !important;
+}
+
+.cbi-section:has(> .cbi-title + div[style*="display: none"]) {
+	display: none;
+}
+
+/* the page says nothing a widget does not */
+[data-o-view="admin-status-overview"] #maincontent > h2 {
+	display: none;
+}
+
+/* sticking inside a column breaks the column */
+[data-o-view="admin-status-overview"] #view .cbi-section > .cbi-title:first-child {
+	position: static;
+}
+
+/* The first two rows of the screen, over the whole width above the columns. */
+#o-home-top {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 430px), 1fr));
+	gap: var(--o-gap);
+	margin-bottom: var(--o-flow);
+}
+
+#view #o-home-top > .cbi-section {
+	min-width: 0;
+	margin: 0;
+	container-type: inline-size;
+}
+
+.o-wan-win[hidden],
+#o-devices[hidden] {
+	display: none !important;
+}
+
+/* The window that prints the machine, filled by omarchy-home.js from the stock
+   System widget. Where that script does not apply, the widget stays as it is. */
+#view .o-ff-win > .cbi-title,
+#view .o-ff-win > .cbi-title + div {
+	display: none !important; /* the title bars of all windows outweigh this selector */
+}
+
+#o-fetch {
+	display: flex;
+	align-items: center;
+	gap: 0 20px;
+}
+
+.o-ff-logo {
+	flex: none;
+	font-size: 9.5px;
+	font-variant-ligatures: none;
+	line-height: 10.5px;
+	white-space: pre;
+}
+
+@container (max-width: 380px) {
+	.o-ff-logo {
+		display: none;
+	}
+}
+
+.o-ff-c1 {
+	color: var(--o-hot);
+}
+
+.o-ff-c2 {
+	color: var(--o-key-hw);
+}
+
+.o-ff-info {
+	flex: 1;
+	min-width: 0;
+	font-size: 12.5px;
+	line-height: 18px;
+}
+
+.o-ff-title b {
+	color: var(--o-hot);
+}
+
+.o-ff-sep {
+	color: var(--o-dim);
+	font-variant-ligatures: none;
+}
+
+.o-ff-line {
+	display: flex;
+	position: relative;
+	white-space: nowrap;
+}
+
+.o-ff-line[hidden] {
+	display: none;
+}
+
+.o-ff-line b {
+	flex: none;
+	margin-right: 1ch;
+}
+
+.o-ff-line > span {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* a value cut to fit, in full under the pointer */
+.o-ff-line.o-cut::after {
+	content: attr(data-full);
+	position: absolute;
+	top: 100%;
+	right: 0;
+	left: 0;
+	z-index: 10;
+	padding: 4px 8px;
+	/* over lines of text, so nothing may shine through */
+	background: linear-gradient(var(--o-pop), var(--o-pop)) var(--o-bg-dark);
+	border: var(--o-border) solid var(--o-hot);
+	box-shadow: var(--o-shadow);
+	overflow-wrap: anywhere;
+	white-space: normal;
+	pointer-events: none;
+}
+
+/* without a pointer the whole value has to fit in */
+@media (hover: none) {
+	.o-ff-line {
+		display: block;
+		overflow-wrap: anywhere;
+		white-space: normal;
+	}
+
+	.o-ff-line b {
+		display: inline;
+	}
+}
+
+.o-ff-hw b {
+	color: var(--o-key-hw);
+}
+
+.o-ff-sw b {
+	color: var(--o-key-sw);
+}
+
+.o-ff-age b {
+	color: var(--o-key-age);
+}
+
+/* the colours fastfetch prints under a machine */
+.o-ff-strip {
+	width: 192px;
+	max-width: 100%;
+	height: 14px;
+	margin-top: 6px;
+	background: linear-gradient(90deg,
+		var(--o-red) 0 12.5%, var(--o-orange) 0 25%, var(--o-yellow) 0 37.5%, var(--o-green) 0 50%,
+		var(--o-cyan) 0 62.5%, var(--o-blue) 0 75%, var(--o-magenta) 0 87.5%, var(--o-accent) 0);
+}
+
+/* The internet connection, printed the same way, with the speeds under it. */
+.o-wan-title {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.o-wan-title b {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.o-wan-state {
+	flex: none;
+}
+
+.o-wan-state.on {
+	color: var(--o-key-hw);
+}
+
+.o-wan-state.off {
+	color: var(--error-color-high);
+}
+
+/* What the connection is on the left, how fast it goes on the right. Beside the
+   fastfetch window the graphs take up the height that window has. */
+.o-wan-win {
+	display: flex;
+	flex-direction: column;
+}
+
+#o-wan {
+	display: flex;
+	flex: 1;
+}
+
+#o-wan > .o-ff-info {
+	display: flex;
+	flex-direction: column;
+}
+
+.o-wan-body {
+	display: flex;
+	flex: 1;
+	gap: 0 20px;
+}
+
+.o-wan-facts,
+.o-speeds {
+	flex: 1 1 0;
+	min-width: 0;
+}
+
+.o-speeds {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.o-speeds[hidden] {
+	display: none;
+}
+
+.o-sp {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 2px;
+}
+
+/* too narrow for two columns */
+@container (max-width: 369px) {
+	.o-wan-body {
+		flex-direction: column;
+		gap: 8px 0;
+	}
+
+	.o-wan-facts,
+	.o-speeds {
+		flex: none;
+	}
+}
+
+.o-sp-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0 6px;
+	white-space: nowrap;
+}
+
+.o-sp-row .o-i {
+	width: auto;
+	font-size: 15px;
+}
+
+.o-sp-peak {
+	min-width: 0;
+	margin-left: auto;
+	overflow: hidden;
+	color: var(--o-dim);
+	font-size: 12px;
+	text-overflow: ellipsis;
+}
+
+.o-spark {
+	position: relative;
+	flex: 1;
+	min-height: 26px;
+}
+
+.o-spark svg {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	fill: currentColor;
+	shape-rendering: crispEdges;
+}
+
+.o-sp-down .o-i,
+.o-sp-down .o-spark {
+	color: var(--o-key-hw);
+}
+
+.o-sp-up .o-i,
+.o-sp-up .o-spark {
+	color: var(--o-key-age);
+}
+
+/* The devices on the network. A device that was quiet for a while goes dim. */
+.o-dev-name {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.o-dev-name .o-i {
+	width: auto;
+	color: var(--o-dim);
+	font-size: 16px;
+}
+
+.o-dev-name.on .o-i {
+	color: var(--o-key-hw);
+}
+
+.cbi-section-error {
+	background: transparent;
+	border-color: var(--error-color-high);
+}
+
+.cbi-section-error ul li {
+	color: var(--error-color-high);
+}
+
+/* Forms
+ * ----- */
+
+.cbi-value {
+	margin-bottom: 14px;
+}
+
+.cbi-value label.cbi-value-title {
+	flex-basis: 210px;
+	color: var(--o-dim);
+	text-align: left;
+}
+
+.cbi-value-description {
+	color: var(--o-dim);
+}
+
+input,
+textarea,
+select,
+.cbi-select,
+.cbi-dropdown:not(.btn):not(.cbi-button) {
+	background: var(--o-field);
+	border-color: var(--o-edge);
+	color: var(--o-text);
+}
+
+.cbi-select::before {
+	background: none;
+}
+
+/* the list of a native select is drawn by the browser and cannot be see-through */
+select option,
+.cbi-select select option {
+	background: var(--o-surface);
+	color: var(--o-text);
+}
+
+select[multiple] {
+	background-color: var(--o-field);
+}
+
+.cbi-dynlist > .item {
+	background: var(--o-field);
+	box-shadow: none;
+}
+
+.cbi-dynlist > .item::after {
+	color: var(--error-color-high);
+}
+
+input[type="checkbox"]::before,
+input[type="radio"]::before {
+	background: var(--o-field);
+}
+
+input[type="checkbox"]:checked:not(.cbi-input-invalid),
+input[type="radio"]:checked:not(.cbi-input-invalid) {
+	--bd-color: var(--o-hot);
+	--fg-color: var(--o-hot);
+}
+
+.item::after,
+.btn,
+.cbi-button {
+	--default-btn-background: var(--o-fill);
+
+	box-shadow: none;
+}
+
+.btn:hover,
+.cbi-button:hover {
+	--default-btn-background: var(--o-fill-hot);
+}
+
+.btn:active,
+.cbi-button:active {
+	--default-btn-background: var(--o-fill-hot);
+}
+
+.item::after,
+.btn,
+.cbi-button,
+.cbi-select,
+.cbi-dropdown,
+.cbi-dynlist > .item,
+input[type="checkbox"]::before,
+input[type="radio"]::before,
+input, button, textarea, select {
+	box-shadow: none;
+	transition: border-color .1s linear, box-shadow .1s linear;
+}
+
+/* hover and focus take the accent instead of the base's blue glow */
+.item:hover::after,
+.btn:hover, .btn:focus,
+.cbi-button:hover, .cbi-button:focus,
+.cbi-select.focus,
+.cbi-dropdown:focus, .cbi-dropdown[open],
+.cbi-dynlist > .item:focus,
+input[type="checkbox"]:focus::before,
+input[type="radio"]:focus::before,
+input:focus, button:hover, textarea:focus, select:focus {
+	border-color: var(--o-focus) !important;
+	box-shadow: none;
+}
+
+/* keyboard focus doubles the edge */
+.btn:focus-visible,
+.cbi-button:focus-visible,
+.cbi-select.focus,
+.cbi-dropdown:focus-visible,
+.cbi-dynlist > .item:focus-visible,
+input[type="checkbox"]:focus-visible::before,
+input[type="radio"]:focus-visible::before,
+input:focus-visible, button:focus-visible, textarea:focus-visible, select:focus-visible {
+	box-shadow: 0 0 0 1px var(--o-focus);
+}
+
+.cbi-input-invalid:focus,
+.cbi-select.cbi-input-invalid,
+input[type="checkbox"].cbi-input-invalid:focus::before,
+input[type="radio"].cbi-input-invalid:focus::before {
+	--o-focus: var(--error-color-high);
+}
+
+/* the wrapper shows the focus of the native select inside it */
+.cbi-select select,
+.cbi-select select:focus {
+	box-shadow: none;
+}
+
+/* filled buttons: flat fills instead of gradients */
+.btn.primary,
+.btn.info,
+.cbi-button-action.important,
+.cbi-page-actions .cbi-button-apply {
+	background: var(--primary-color-high);
+	border-color: var(--primary-color-high);
+}
+
+.btn.info {
+	color: var(--on-primary-color);
+}
+
+.btn.success,
+.cbi-button-positive.important,
+.cbi-page-actions .cbi-button-save {
+	background: var(--success-color-high);
+	border-color: var(--success-color-high);
+}
+
+.btn.success {
+	color: var(--on-success-color);
+}
+
+.btn.danger,
+.btn.error,
+.cbi-button-negative.important {
+	background: var(--error-color-high);
+	border-color: var(--error-color-high);
+}
+
+.btn.danger,
+.btn.error {
+	color: var(--on-error-color);
+}
+
+/* a fill has no edge left to light up under the pointer, so it brightens */
+.btn.primary:hover,
+.btn.info:hover,
+.btn.success:hover,
+.btn.danger:hover,
+.btn.error:hover,
+.cbi-button-action.important:hover,
+.cbi-button-positive.important:hover,
+.cbi-button-negative.important:hover,
+.cbi-page-actions .cbi-button-apply:hover,
+.cbi-page-actions .cbi-button-save:hover {
+	filter: brightness(1.12);
+}
+
+/* one outlined Edit per table row reads better than a column of fills */
+.cbi-section-actions .cbi-button-edit {
+	--on-color: var(--primary-color-high);
+
+	background: var(--default-btn-background);
+}
+
+/* neighbours built without whitespace between them would touch */
+.btn + .btn,
+.cbi-button + .cbi-button {
+	margin-left: 4px;
+}
+
+/* a row of buttons may break onto a second line when it has to; a field with
+   its button attached stays in one piece */
+.control-group:not(:has(> input, > select)) {
+	flex-wrap: wrap;
+	gap: 4px;
+}
+
+.control-group > .btn + .btn,
+.control-group > .cbi-button + .cbi-button {
+	margin-left: 0;
+}
+
+/* The controls above the list of the package manager. That page brings styles
+   of its own which pack them together; the id outweighs those. */
+#view .controls {
+	gap: 18px 24px;
+	margin: 2px 0;
+}
+
+/* the columns of a row start level with each other */
+#view .controls > * {
+	align-content: flex-start;
+	gap: 8px 0;
+	padding: 0;
+}
+
+#view .controls > * > label {
+	min-width: 0;
+}
+
+/* the two fields give way, so that the row of buttons stays one row while it can */
+#view .controls > :nth-child(2),
+#view .controls > :nth-child(3) {
+	flex-basis: 200px;
+	min-width: 0;
+}
+
+#view .controls > :nth-child(4) {
+	flex-basis: auto;
+}
+
+#view .controls .control-group {
+	min-width: 0;
+}
+
+#view .controls .control-group > input {
+	flex: 1 1 0;
+	min-width: 0;
+}
+
+#view .controls .control-group:not(:has(> input, > select)) {
+	gap: 8px;
+}
+
+.btn.active, .btn:active {
+	box-shadow: inset 0 0 0 1px var(--o-focus);
+}
+
+.actions,
+.cbi-page-actions {
+	padding: 10px 0;
+	background: none;
+	border-top-color: var(--o-line);
+}
+
+/* Save and friends float in the middle, like Omarchy's dock. */
+#view > .cbi-page-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	width: fit-content;
+	max-width: 100%;
+	margin: var(--o-gap) auto 0;
+	padding: 6px 8px;
+	background: var(--o-pop);
+	border: var(--o-border) solid var(--o-edge);
+	box-shadow: var(--o-shadow);
+}
+
+#view > .cbi-page-actions .btn + .btn,
+#view > .cbi-page-actions .cbi-button + .cbi-button {
+	margin-left: 0;
+}
+
+#view > .cbi-page-actions:empty {
+	display: none;
+}
+
+/* keep Save in reach on long pages */
+@media (min-height: 600px) {
+	#view > .cbi-page-actions {
+		position: sticky;
+		bottom: calc(var(--o-foot) + var(--o-gap));
+		z-index: 5;
+	}
+}
+
+/* Dropdowns
+ * --------- */
+
+.cbi-dropdown[open] > ul.dropdown {
+	background: var(--o-surface);
+	border-color: var(--o-hot);
+	box-shadow: var(--o-shadow);
+}
+
+.cbi-dropdown[open] > ul.dropdown > li {
+	border-bottom-color: transparent;
+}
+
+.cbi-dropdown[open] > ul.dropdown > li[selected] {
+	background: var(--o-raised);
+	color: var(--o-hot);
+}
+
+.cbi-dropdown[open] > ul.dropdown > li.focus,
+.cbi-dropdown[open] > ul.dropdown > li:hover,
+.cbi-dropdown[open] > ul.dropdown > li[selected].focus,
+.cbi-dropdown[open] > ul.dropdown > li[selected]:hover {
+	background: var(--o-hot);
+	color: var(--o-on-hot);
+}
+
+.cbi-select select option:hover,
+.cbi-select select option:checked {
+	background: var(--o-hot);
+	color: var(--o-on-hot);
+}
+
+/* Tables
+ * ------ */
+
+.table .th, .table .td {
+	padding: 8px 10px 7px;
+}
+
+.table .td, .table .th {
+	border-top-color: var(--o-line);
+}
+
+@media (hover: hover) {
+	.cbi-section-table .tr:hover .td,
+	.cbi-section-table .tr:hover .th,
+	.cbi-section-table .tr:hover::before {
+		background-color: var(--o-fill-hot);
+	}
+
+	/* the header row is dim text, which is not checked against a lit row */
+	.cbi-section-table .tr.cbi-section-table-titles:hover .th,
+	.cbi-section-table .tr.cbi-section-table-titles:hover::before {
+		background-color: transparent;
+	}
+}
+
+/* no rule above the first row: the panel border is right there */
+.table .tr:first-child .td,
+.table .tr:first-child .th {
+	border-top: 0;
+}
+
+.cbi-rowstyle-2,
+.tr.table-titles,
+.tr.cbi-section-table-titles {
+	background: transparent;
+}
+
+.tr.table-titles .th,
+.tr.cbi-section-table-titles .th {
+	border-top: 0;
+	color: var(--o-dim);
+	font-size: 11px;
+	letter-spacing: .05em;
+	text-transform: uppercase;
+}
+
+.cbi-section-table-titles.named::before,
+.cbi-section-table-descr.named::before,
+.cbi-section-table-row[data-title]::before {
+	border-top-color: var(--o-line);
+}
+
+.tr.drag-over-above,
+.tr.drag-over-below {
+	border-color: var(--o-hot);
+}
+
+/* Tabs
+ * ---- */
+
+.tabs, .cbi-tabmenu {
+	margin: 0 0 16px;
+	padding: 0;
+	background: none;
+	border-bottom: 1px solid var(--o-line);
+}
+
+.tabs > li, .cbi-tabmenu > li {
+	height: auto;
+	margin: 0 2px -1px 0;
+	background: none;
+	border: 0;
+	border-bottom: 2px solid var(--o-hot);
+	color: var(--o-hot);
+}
+
+.tabs > li > a, .cbi-tabmenu > li > a {
+	padding: 5px 12px;
+	line-height: 20px;
+}
+
+.tabs > li:not(.active), .cbi-tabmenu > .cbi-tab-disabled {
+	background: none;
+	border-bottom-color: transparent;
+	color: var(--o-dim);
+}
+
+.tabs > li:not(.active):hover, .cbi-tabmenu > .cbi-tab-disabled:hover {
+	background: var(--o-field);
+	color: var(--o-bright);
+}
+
+.cbi-tab-disabled[data-errors]::after {
+	background: var(--error-color-high);
+	color: var(--on-error-color);
+}
+
+.cbi-tabmenu.map {
+	margin: 0 0 16px;
+}
+
+.cbi-tabmenu.map > li {
+	font-size: 13px;
+}
+
+/* the sub-pages of a page, above its windows */
+#tabmenu {
+	margin-bottom: var(--o-gap);
+}
+
+#tabmenu > .tabs {
+	margin: 0;
+	background: var(--o-glass);
+	border: var(--o-border) solid var(--o-edge);
+}
+
+#tabmenu > .tabs + .tabs {
+	margin-top: var(--o-gap);
+}
+
+#tabmenu > .tabs > li {
+	margin-bottom: 0;
+}
+
+/* Meters
+ * ------
+ * Cut into blocks, the way a terminal draws a gauge.
+ */
+
+.cbi-progressbar {
+	height: auto;
+	margin: 0 0 4px;
+	/* the track is the bottom strip; the caption above it is part of the box */
+	background: linear-gradient(var(--o-line), var(--o-line)) left bottom / 100% 10px no-repeat;
+	border: 0;
+}
+
+/* The base hangs the caption above the bar as an absolute, unwrappable line,
+   which pokes out of narrow cells. In the flow it wraps instead. */
+.cbi-progressbar::before {
+	display: block;
+	position: static;
+	margin-bottom: 3px;
+	overflow: visible;
+	white-space: pre-wrap;
+}
+
+.cbi-progressbar > div {
+	height: 10px;
+	background: repeating-linear-gradient(90deg, var(--o-hot) 0 5px, transparent 5px 7px);
+}
+
+/* Notices
+ * -------
+ * Quiet surface, one coloured edge that says what kind it is.
+ */
+
+.alert-message,
+.alert-message.danger,
+.alert-message.error,
+.alert-message.success,
+.alert-message.info,
+.alert-message.notice,
+.alert-message.warning,
+.cbi-tooltip.error,
+.cbi-tooltip.success,
+.cbi-tooltip.info,
+.cbi-tooltip.notice {
+	background: var(--o-raised);
+	border: 1px solid var(--o-line);
+	border-left: 3px solid var(--o-tone, var(--warn-color-high));
+	box-shadow: none;
+	color: var(--o-text);
+}
+
+.alert-message {
+	margin-bottom: 12px;
+	padding: 8px 12px 6px;
+}
+
+/* between the windows there is no glass underneath */
+#maincontent > .alert-message,
+:is(#view, #view > .cbi-map) > .alert-message {
+	margin: 0 0 var(--o-gap);
+	background: var(--o-glass);
+}
+
+.alert-message.danger, .alert-message.error, .cbi-tooltip.error {
+	--o-tone: var(--error-color-high);
+}
+
+.alert-message.success, .cbi-tooltip.success {
+	--o-tone: var(--success-color-high);
+}
+
+.alert-message.info, .cbi-tooltip.info {
+	--o-tone: var(--primary-color-high);
+}
+
+.alert-message.notice, .cbi-tooltip.notice {
+	--o-tone: var(--o-edge);
+}
+
+.alert-message h4,
+.alert-message h5 {
+	color: var(--o-bright);
+}
+
+.close,
+.close:hover {
+	color: inherit;
+	text-shadow: none;
+}
+
+.cbi-tooltip {
+	padding: 3px 7px;
+	background: var(--o-surface);
+	border: 1px solid var(--o-edge);
+	box-shadow: 0 6px 18px rgba(0, 0, 0, .3);
+	color: var(--o-text);
+}
+
+.zonebadge .cbi-tooltip {
+	box-shadow: 0 6px 18px rgba(0, 0, 0, .3);
+}
+
+/* Dialogs
+ * ------- */
+
+#modal_overlay,
+#o-launcher {
+	background: var(--o-scrim);
+	-webkit-backdrop-filter: blur(6px);
+	backdrop-filter: blur(6px);
+}
+
+.modal {
+	padding: 16px 16px 8px;
+	background: var(--o-pop);
+	border: var(--o-border) solid var(--o-hot);
+	box-shadow: var(--o-shadow);
+}
+
+/* the overlay is only made visible, so the opening is keyed on its class */
+body.modal-overlay-active .modal {
+	animation: o-pop .2s var(--o-ease);
+}
+
+.modal > h4:first-child {
+	margin-bottom: 12px;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--o-line);
+}
+
+.modal > h4:first-child::before {
+	content: "\276f\a0";
+	color: var(--o-hot);
+}
+
+/* Small things
+ * ------------ */
+
+.label {
+	padding: 1px 6px;
+	background-color: var(--o-raised);
+	border: 1px solid var(--o-line);
+	color: var(--o-text);
+	font-size: 11px;
+	font-weight: normal;
+	text-transform: none;
+}
+
+a.label:link,
+a.label:visited {
+	color: inherit;
+}
+
+.label.important,
+.label.notice {
+	background-color: var(--primary-color-high);
+	border-color: var(--primary-color-high);
+	color: var(--on-primary-color);
+}
+
+.label.warning {
+	border-color: var(--warn-color-high);
+}
+
+.label.success {
+	border-color: var(--success-color-high);
+}
+
+.label[data-clickable] {
+	cursor: pointer;
+}
+
+.cbi-title-ref,
+div.cbi-value var,
+.td.cbi-value-field var {
+	color: var(--o-hot);
+}
+
+div.cbi-value var[data-tooltip],
+.td.cbi-value-field var[data-tooltip],
+div.cbi-value var.cbi-tooltip-container,
+.td.cbi-value-field var.cbi-tooltip-container {
+	border-bottom-color: var(--o-hot);
+}
+
+.ifacebox {
+	background: var(--o-fill);
+	border-color: var(--o-edge);
+	box-shadow: none;
+}
+
+.ifacebox .ifacebox-head {
+	background: var(--o-raised);
+	border-bottom-color: var(--o-edge);
+}
+
+.ifacebox .ifacebox-head[style],
+.ifacebadge,
+.zonebadge {
+	text-shadow: none;
+}
+
+.ifacebadge {
+	background: var(--o-raised);
+	border-color: var(--o-line);
+	box-shadow: none;
+}
+
+.ifacebadge-active {
+	border-color: var(--o-hot);
+}
+
+.zonebadge-empty {
+	border-color: var(--o-edge);
+	color: var(--o-dim);
+}
+
+.cbi-filebrowser,
+.cbi-filebrowser > *,
+.cbi-filebrowser .upload {
+	border-color: var(--o-line);
+}
+
+.cbi-filebrowser > ul > li:hover {
+	background: var(--o-field);
+}
+
+[data-darkmode] .spinning::before {
+	background: var(--on-color, var(--o-text));
+}
+
+/* Status line
+ * -----------
+ * Three zones, the two outer ones equally wide: whatever is on either side gives
+ * way, and the dock stays in the middle of the screen on every page.
+ */
+
+footer {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+	position: sticky;
+	bottom: 0;
+	z-index: 800;
+	align-items: center;
+	gap: 0 20px;
+	min-height: 30px;
+	margin: 0;
+	padding: 0 12px;
+	background: var(--o-pop);
+	-webkit-backdrop-filter: blur(var(--o-blur));
+	backdrop-filter: blur(var(--o-blur));
+	border-top: 1px solid var(--o-line);
+	color: var(--o-dim);
+	font-size: 12px;
+}
+
+footer span {
+	margin: 0;
+}
+
+footer a {
+	color: inherit;
+}
+
+footer a:hover {
+	color: var(--o-hot);
+}
+
+#o-status {
+	display: flex;
+	grid-area: 1 / 1;
+	align-items: center;
+	gap: 14px;
+	min-width: 0;
+}
+
+.o-path {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.o-path b {
+	color: var(--o-hot);
+	font-weight: normal;
+}
+
+.o-hint {
+	flex: none;
+	padding: 0;
+	background: transparent;
+	box-shadow: none;
+	color: inherit;
+	font-size: 12px;
+}
+
+.o-hint:hover {
+	color: var(--o-bright);
+}
+
+/* The places a router's owner goes to most, on every page, in the bar that never
+   leaves the screen: nothing floats over the page or next to Save. */
+#o-dock {
+	display: flex;
+	grid-area: 1 / 2;
+}
+
+#o-dock[hidden] {
+	display: none;
+}
+
+#o-dock a {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 34px;
+	height: 30px;
+	border-bottom: 2px solid transparent;
+	border-top: 2px solid transparent;
+	color: var(--o-dim);
+}
+
+#o-dock a .o-i {
+	width: auto;
+	font-size: 16px;
+}
+
+#o-dock a:hover,
+#o-dock a:focus-visible {
+	background: var(--o-fill-hot);
+	color: var(--o-bright);
+	text-decoration: none;
+}
+
+#o-dock a[aria-current] {
+	border-bottom-color: var(--o-hot);
+	color: var(--o-hot);
+}
+
+.o-foot-right {
+	display: flex;
+	grid-area: 1 / 3;
+	justify-content: flex-end;
+	min-width: 0;
+}
+
+.o-foot-info {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* all of it, when it had to be cut; the script says when */
+.o-foot-right.o-cut::after {
+	content: attr(data-full);
+	position: absolute;
+	right: var(--o-gap);
+	bottom: calc(100% + var(--o-gap));
+	max-width: calc(100vw - 2 * var(--o-gap));
+	padding: 8px 12px;
+	/* over lines of text, so nothing may shine through */
+	background: linear-gradient(var(--o-pop), var(--o-pop)) var(--o-bg-dark);
+	border: var(--o-border) solid var(--o-hot);
+	box-shadow: var(--o-shadow);
+	color: var(--o-text);
+	line-height: 18px;
+	white-space: pre-line;
+	pointer-events: none;
+	transform-origin: 100% 100%;
+	animation: o-grow .18s var(--o-ease);
+}
+
+footer ul.breadcrumb {
+	flex: none;
+	margin: 0 0 0 14px;
+	padding: 0;
+	background: none;
+	border: 0;
+}
+
+/* Launcher
+ * -------- */
+
+#o-launcher {
+	display: flex;
+	align-items: flex-start;
+	justify-content: center;
+	position: fixed;
+	inset: 0;
+	z-index: 2000;
+	padding: 12vh 16px 16px;
+}
+
+#o-launcher[hidden] {
+	display: none;
+}
+
+/* Same build as an Omarchy menu: a heavy frame, a quiet prompt, tall rows. */
+.o-launcher-box {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	max-width: 560px;
+	max-height: 70vh;
+	padding: 14px;
+	background: var(--o-pop);
+	border: var(--o-border) solid var(--o-text);
+	box-shadow: var(--o-shadow);
+	animation: o-pop .2s var(--o-ease);
+}
+
+.o-launcher-prompt {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 2px 10px 12px;
+}
+
+.o-launcher-prompt::before {
+	content: "\276f";
+	color: var(--o-hot);
+	font-weight: bold;
+}
+
+.o-launcher-prompt input,
+.o-launcher-prompt input:focus-visible {
+	flex: 1;
+	width: auto;
+	min-width: 0;
+	height: 24px;
+	padding: 0;
+	background: transparent;
+	border: 0;
+	box-shadow: none;
+	font-size: 14px;
+}
+
+#o-launcher-list {
+	margin: 0;
+	overflow-y: auto;
+	list-style: none;
+}
+
+#o-launcher-list li {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 9px 10px;
+	color: var(--o-text);
+	line-height: 20px;
+	cursor: pointer;
+}
+
+#o-launcher-list li > span:not(.o-swatch) {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+#o-launcher-list li > em {
+	color: var(--o-dim);
+	font-size: 11px;
+	font-style: normal;
+	white-space: nowrap;
+}
+
+#o-launcher-list li:hover {
+	background: var(--o-fill);
+}
+
+#o-launcher-list li[aria-selected="true"] {
+	background: var(--o-fill-hot);
+	color: var(--o-hot);
+}
+
+#o-launcher-list li.o-none {
+	color: var(--o-dim);
+	cursor: default;
+}
+
+.o-swatch {
+	flex: 0 0 30px;
+	border: 1px solid;
+	font-size: 10px;
+	font-weight: bold;
+	line-height: 16px;
+	text-align: center;
+}
+
+.o-launcher-hint {
+	margin-top: 8px;
+	padding: 8px 10px 0;
+	border-top: 1px solid var(--o-line);
+	color: var(--o-dim);
+	font-size: 11px;
+}
+
+/* Settings
+ * --------
+ * Grows out of the bar, like a panel in Omarchy.
+ */
+
+#o-settings {
+	position: fixed;
+	top: calc(var(--o-bar) + var(--o-gap));
+	right: var(--o-gap);
+	z-index: 1500;
+	width: 340px;
+	max-width: calc(100vw - 2 * var(--o-gap));
+	max-height: calc(100vh - var(--o-bar) - var(--o-foot) - 2 * var(--o-gap));
+	padding: 0 var(--o-pad) var(--o-pad);
+	background: var(--o-pop);
+	-webkit-backdrop-filter: blur(var(--o-blur));
+	backdrop-filter: blur(var(--o-blur));
+	border: var(--o-border) solid var(--o-hot);
+	box-shadow: var(--o-shadow);
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	transform-origin: 100% 0;
+	animation: o-grow .18s var(--o-ease);
+}
+
+/* the stock stylesheet and the rules below give some of these a display of their own */
+#o-settings[hidden],
+#o-settings [hidden] {
+	display: none !important;
+}
+
+#o-settings h4 {
+	margin: 14px 0 6px;
+	color: var(--o-dim);
+	font-size: 11px;
+	font-weight: normal;
+	letter-spacing: .05em;
+	line-height: 16px;
+	text-transform: uppercase;
+}
+
+.o-set-themes {
+	margin: 0 -6px;
+}
+
+.o-set-theme {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	padding: 5px 6px;
+	background: transparent;
+	box-shadow: none;
+	color: var(--o-text);
+	text-align: left;
+}
+
+.o-set-theme .o-set-name {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.o-set-theme em {
+	color: var(--o-dim);
+	font-size: 11px;
+	font-style: normal;
+}
+
+.o-set-theme:hover,
+.o-set-theme:focus-visible {
+	background: var(--o-fill-hot);
+}
+
+.o-set-theme[aria-pressed="true"] {
+	color: var(--o-hot);
+}
+
+.o-set-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+
+.o-set-row .btn {
+	flex: 1 1 auto;
+	margin: 0;
+}
+
+.o-set-row .btn[aria-pressed="true"] {
+	border-color: var(--o-hot);
+	color: var(--o-hot);
+}
+
+.o-set-range {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-top: 8px;
+	color: var(--o-dim);
+	font-size: 12px;
+}
+
+.o-set-range input {
+	flex: 1;
+	min-width: 0;
+	accent-color: var(--o-hot);
+}
+
+.o-set-status {
+	margin: 6px 0 0;
+	color: var(--o-dim);
+	font-size: 11px;
+}
+
+.o-set-status:empty {
+	display: none;
+}
+
+.o-set-check {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 3px 0;
+	color: var(--o-text);
+	cursor: pointer;
+}
+
+/* Login
+ * -----
+ * Built like Omarchy's lock screen: the blurred wallpaper and one box. The
+ * theme arrives with a short intro, once, as themes do at login there.
+ */
+
+body:has(.o-login)::before {
+	animation: o-wall-in 1.1s var(--o-ease);
+}
+
+.o-login {
+	display: grid;
+	flex: 1;
+	place-items: center;
+	padding: 24px 16px;
+}
+
+.o-login-box {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	max-width: 380px;
+	padding: 24px 22px 22px;
+	background: var(--o-glass);
+	border: var(--o-border) solid var(--o-text);
+	transition: border-color .16s var(--o-ease);
+}
+
+.o-login-box:focus-within {
+	border-color: var(--o-hot);
+}
+
+.o-login-box h1 {
+	margin: 0;
+	font-size: 22px;
+	line-height: 30px;
+	overflow-wrap: anywhere;
+}
+
+.o-login-box h1::before {
+	content: "\276f\a0";
+	color: var(--o-hot);
+}
+
+.o-login-box p {
+	margin: 0 0 14px;
+	color: var(--o-dim);
+}
+
+.o-login-box label {
+	margin: 8px 0 4px;
+	color: var(--o-dim);
+	font-size: 12px;
+}
+
+.o-login-box input {
+	width: 100%;
+	height: 36px;
+	padding: 6px 10px;
+}
+
+.o-login-box button {
+	height: 38px;
+	margin-top: 18px;
+	font-weight: bold;
+}
+
+/* No room for the side panel
+ * --------------------------
+ * The widest stock tables need about 740 pixels. Below that the side panel
+ * becomes a strip above the page, so the page keeps the whole width.
+ */
+
+@media (max-width: 1040px) {
+	.o-desk {
+		display: block;
+	}
+
+	#o-side {
+		display: block;
+		position: static;
+		max-height: none;
+		margin: 0 0 var(--o-gap);
+		padding: 0;
+	}
+
+	#o-side:empty {
+		min-height: 38px;
+	}
+
+	#o-side > h3 {
+		display: none;
+	}
+
+	#o-side > ul {
+		display: flex;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+
+	#o-side a {
+		gap: 6px;
+		padding: 8px 12px 6px;
+		border-bottom: 2px solid transparent;
+		white-space: nowrap;
+	}
+
+	#o-side .active > a {
+		border-bottom-color: var(--o-hot);
+	}
+
+	#o-side .o-more > a::after {
+		content: none;
+	}
+}
+
+/* Narrow screens
+ * --------------
+ * The side panel becomes a strip under the bar, the bar scrolls sideways.
+ */
+
+@media (max-width: 900px) {
+	:root {
+		--o-gap: 6px;
+		--o-bar-min: 34px;
+		--o-bar: 35px;
+	}
+
+	header {
+		grid-template-columns: minmax(0, 1fr) auto;
+	}
+
+	.o-bar-mid,
+	.o-pill,
+	header .brand {
+		display: none;
+	}
+
+	.o-bar-left {
+		flex-wrap: nowrap;
+	}
+
+	#topmenu {
+		flex: 1 1 auto;
+		flex-wrap: nowrap;
+		min-width: 0;
+		margin: 0;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+
+	#topmenu > li > a {
+		padding: 0 10px;
+		white-space: nowrap;
+	}
+
+	/* a workspace opens its first page; its pages are in the strip below */
+	#topmenu .dropdown-menu {
+		display: none;
+	}
+
+	.o-bar-right {
+		flex: 0 0 auto;
+		flex-direction: row;
+		flex-wrap: nowrap;
+		margin: 0;
+		padding: 0;
+	}
+
+	.cbi-value label.cbi-value-title {
+		flex-basis: 160px;
+	}
+
+	.o-hint,
+	.o-path,
+	.o-theme-btn span,
+	.o-foot-info {
+		display: none;
+	}
+
+	/* the dock is what is left of the status line, sized for fingers */
+	footer {
+		gap: 0;
+		padding: 0;
+	}
+
+	#o-dock {
+		min-width: 0;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+
+	#o-dock a {
+		flex: none;
+		width: 36px;
+		height: 34px;
+	}
+}
+
+@media (max-width: 600px) {
+	/* the icons are enough for the workspaces that are not open */
+	#topmenu > li:not(.active) > a > span {
+		display: none;
+	}
+}
+
+/* Phones
+ * ------
+ * base-mobile.css is loaded before this file, on small devices only, and turns
+ * tables into stacked cards. These put back what the rules above take from it.
+ */
+
+@media screen and (max-device-width: 600px) {
+	.table .th, .table .td {
+		padding: 3px;
+	}
+
+	.td.cbi-section-actions {
+		padding: 3px 2px;
+	}
+
+	/* more buttons than one row of a card has room for */
+	.td.cbi-section-actions > * {
+		flex-wrap: wrap;
+	}
+
+	/* base-mobile.css gives every group the height of one row; buttons that
+	   wrapped need more */
+	.cbi-value-field .control-group:not(:has(> input, > select)) {
+		height: auto;
+	}
+}
+
+@media screen and (max-device-width: 375px) {
+	.td .ifacebox .ifacebox-head {
+		border-radius: 0;
+	}
+}

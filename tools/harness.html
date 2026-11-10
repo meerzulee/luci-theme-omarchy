@@ -1,0 +1,444 @@
+<!doctype html>
+<!--
+  Test harness for the rig only (tools/rig harness puts it at /omarchy-harness.html).
+  It is not part of the package.
+
+  Loads a LuCI page in a frame of a chosen size, replays a few scripted steps in
+  it and prints what it measured. Same origin as LuCI, so it shares the login.
+
+    /omarchy-harness.html?w=390&h=760&u=/cgi-bin/luci/admin/status/overview&a=launcher;type:nord;key:Enter
+
+  Add phone=1 to a narrow frame to get the stylesheet rules that are meant for
+  small devices (see below). flicker=<ms> lists what moves while the page is drawn.
+
+  Steps (separated by ";"): launcher, slash, type:<text>, key:<Key>[*n],
+  focus:<selector>, click:<selector>, scroll:<y>, wait:<ms>,
+  attr:<selector>@<attribute>, css:<selector>@<property>, count:<selector>,
+  box:<selector>, eval:<javascript run in the page>
+-->
+<meta charset="utf-8">
+<title>omarchy harness</title>
+<style>
+	body { margin: 0; background: #777; font: 12px/1.4 monospace; }
+	pre { margin: 0; padding: 6px 8px; background: #111; color: #ddd; white-space: pre-wrap; word-break: break-all; }
+	iframe { display: block; border: 0; background: #fff; }
+</style>
+<pre id="out">running</pre>
+<iframe id="frame"></iframe>
+<script>
+(async function() {
+	const q = new URLSearchParams(location.search);
+	const frame = document.getElementById('frame');
+	const out = document.getElementById('out');
+	const sleep = ms => new Promise(done => setTimeout(done, ms));
+
+	frame.style.width = (q.get('w') || 390) + 'px';
+	frame.style.height = (q.get('h') || 760) + 'px';
+
+	/* A frame wider than this window would be cut off at its edge and look like a
+	   page that overflows. Shrink the picture of it; its layout stays that wide. */
+	if (+q.get('w') > innerWidth) {
+		frame.style.transformOrigin = '0 0';
+		frame.style.transform = 'scale(' + (innerWidth / +q.get('w')) + ')';
+	}
+
+	/* Phones: base-mobile.css and a few rules of the skin go by the size of the
+	   device, which a frame cannot fake. With phone=1 those two sheets are put in
+	   again with "max-device-width" read as "max-width", at the same place in the
+	   cascade, so a narrow frame gets what a phone gets. */
+	const phone = async doc => {
+		if (!q.get('phone'))
+			return;
+
+		for (const link of doc.querySelectorAll('link[rel="stylesheet"]')) {
+			if (!/base-mobile\.css|omarchy\.css/.test(link.href))
+				continue;
+
+			const style = doc.createElement('style');
+
+			/* a style element resolves url() against the page, a stylesheet against itself */
+			style.textContent = (await (await fetch(link.href)).text())
+				.replace(/max-device-width/g, 'max-width')
+				.replace(/url\("(?!data:)/g, 'url("' + new URL('.', link.href).href);
+			link.replaceWith(style);
+		}
+	};
+
+	/* crawl=1: walk every page reachable from the menu and list what is wrong
+	   with the layout on each. crawl=<n> stops after n pages. */
+	if (q.get('crawl')) {
+		const limit = +q.get('crawl') > 1 ? +q.get('crawl') : 60;
+		const todo = [ q.get('u') || '/cgi-bin/luci/admin/status/overview' ], done = new Set(), report = [];
+
+		const painted = (w, d, el) => {
+			for (let n = el; n && n !== d.body; n = n.parentElement) {
+				const s = w.getComputedStyle(n);
+				const m = s.backgroundColor.match(/^rgba?\(([^)]+)\)$/);
+
+				if (s.backgroundImage != 'none' || (m && (m[1].split(',').length < 4 || parseFloat(m[1].split(',')[3]) > 0)))
+					return true;
+			}
+
+			return false;
+		};
+
+		while (todo.length && report.length < limit) {
+			const path = todo.shift();
+
+			if (done.has(path))
+				continue;
+
+			done.add(path);
+			out.textContent = 'running ' + report.length + ' ' + path;
+
+			const loaded = new Promise(ok => frame.addEventListener('load', ok, { once: true }));
+			frame.src = path;
+			await loaded;
+
+			const w = frame.contentWindow, d = frame.contentDocument;
+
+			if (d.visibilityState != 'visible') {
+				w.requestAnimationFrame = fn => w.setTimeout(() => fn(w.performance.now()), 16);
+				w.cancelAnimationFrame = id => w.clearTimeout(id);
+
+				if (w.L && w.L.require)
+					w.L.require('rpc').then(rpc => rpc.declare({ object: 'system', method: 'board' })()).catch(() => {});
+			}
+
+			await phone(d);
+
+			for (let i = 0; i < 90; i++) {
+				if (d.querySelector('#topmenu li') && !d.querySelector('#view > .spinning'))
+					break;
+
+				await sleep(100);
+			}
+
+			await sleep(+(q.get('settle') || 700));
+
+			/* css=<rules>: put a bug back in, to see that this page notices it */
+			if (q.get('css'))
+				d.head.appendChild(Object.assign(d.createElement('style'), { textContent: q.get('css') }));
+
+			/* theme=<palette>: look at every page in that palette */
+			if (q.get('theme')) {
+				d.documentElement.setAttribute('data-palette', q.get('theme'));
+				d.documentElement.setAttribute('data-darkmode', w.getComputedStyle(d.documentElement).getPropertyValue('--o-mode').trim() != 'light');
+				await sleep(100);
+			}
+
+			d.querySelectorAll('#topmenu .dropdown-menu a, #o-side a, #tabmenu a').forEach(a => {
+				const u = new URL(a.href);
+
+				if (u.origin == location.origin && u.pathname.indexOf('/admin/logout') < 0 && !done.has(u.pathname))
+					todo.push(u.pathname);
+			});
+
+			const bare = [], spill = [];
+			const walk = d.createTreeWalker(d.querySelector('.o-desk') || d.body, w.NodeFilter.SHOW_TEXT);
+
+			while (walk.nextNode() && bare.length < 5) {
+				const text = walk.currentNode.data.trim();
+				const el = walk.currentNode.parentElement;
+
+				if (!text || el.closest('script, style, noscript, option'))
+					continue;
+
+				const range = d.createRange();
+
+				range.selectNodeContents(walk.currentNode);
+
+				const box = range.getBoundingClientRect();
+
+				if (box.width && box.height && w.getComputedStyle(el).visibility == 'visible' && !painted(w, d, el))
+					bare.push(text.slice(0, 40));
+			}
+
+			/* text that cannot be read against what it is painted on */
+			const dim = [];
+			const parts = c => { const m = c.match(/[\d.]+/g).map(Number); return m.length > 3 ? m : m.concat(1); };
+			const on = (top, under) => [ 0, 1, 2 ].map(i => top[i] * top[3] + under[i] * (1 - top[3])).concat(1);
+			const lum = c => { const f = v => (v /= 255) <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); return .2126 * f(c[0]) + .7152 * f(c[1]) + .0722 * f(c[2]); };
+			const ratio = (a, b) => (Math.max(lum(a), lum(b)) + .05) / (Math.min(lum(a), lum(b)) + .05);
+			const ground = parts(w.getComputedStyle(d.documentElement).getPropertyValue('--o-glass')).slice(0, 3).concat(1);
+			const texts = d.createTreeWalker(d.body, w.NodeFilter.SHOW_TEXT);
+
+			while (texts.nextNode() && dim.length < 5) {
+				const el = texts.currentNode.parentElement;
+
+				if (!texts.currentNode.data.trim() || el.closest('script, style, noscript, option, [disabled], .disabled, .cbi-tooltip'))
+					continue;
+
+				const range = d.createRange();
+
+				range.selectNodeContents(texts.currentNode);
+
+				const box = range.getBoundingClientRect();
+
+				if (!box.width || !box.height || w.getComputedStyle(el).visibility != 'visible')
+					continue;
+
+				const layers = [];
+				let image = false;
+
+				for (let n = el; n && n !== d.documentElement && !image; n = n.parentElement) {
+					const s = w.getComputedStyle(n), c = parts(s.backgroundColor);
+
+					image = n !== d.body && s.backgroundImage != 'none';
+
+					if (c[3] > 0)
+						layers.push(c);
+
+					if (c[3] >= 1)
+						break;
+				}
+
+				if (image)
+					continue;
+
+				const under = layers.reverse().reduce((u, c) => on(c, u), ground);
+				const got = ratio(on(parts(w.getComputedStyle(el).color), under), under);
+
+				if (got < 3)
+					dim.push(texts.currentNode.data.trim().slice(0, 30) + ' ' + got.toFixed(1));
+			}
+
+			d.querySelectorAll('#view .cbi-section:not(.cbi-section .cbi-section):not([data-tab-title]), #view .cbi-map-tabbed').forEach(el => {
+				if (el.offsetWidth && el.scrollWidth > el.clientWidth + 1)
+					spill.push(String(el.id || el.className).slice(0, 30) + ' +' + (el.scrollWidth - el.clientWidth));
+			});
+
+			const v = d.querySelector('#view');
+			const lefts = new Set();
+			const dock = d.querySelector('#o-dock');
+			const dockBox = dock ? dock.getBoundingClientRect() : null;
+
+			/* padding on an inline box takes no room: it lies over what is above it */
+			const inline = [];
+
+			if (v)
+				v.querySelectorAll(':scope > *, :scope > .cbi-map > *').forEach(el => {
+					const box = el.getBoundingClientRect();
+					const style = w.getComputedStyle(el);
+
+					if (box.width && style.position != 'fixed')
+						lefts.add(Math.round(box.left));
+
+					if (box.width && style.display == 'inline' && parseFloat(style.paddingTop) > 0)
+						inline.push(el.tagName + ' ' + el.textContent.trim().slice(0, 30));
+				});
+
+			report.push({
+				p: path.replace('/cgi-bin/luci/admin/', ''),
+				load: !d.querySelector('#view > .spinning'),
+				bare: bare,
+				dim: dim,
+				spill: spill.slice(0, 4),
+				inline: inline,
+				over: d.documentElement.scrollWidth - d.documentElement.clientWidth,
+				dock: dockBox ? Math.round(Math.abs(dockBox.left + dockBox.width / 2 - d.documentElement.clientWidth / 2)) : 0,
+				strip: v ? [ v.clientWidth, v.scrollWidth, v.clientHeight, v.scrollHeight ].join(' ') : null,
+				cols: lefts.size
+			});
+		}
+
+		/* the whole list does not fit on a screenshot: what is wrong, and how many */
+		out.textContent = JSON.stringify({
+			pages: report.length,
+			wrong: report.filter(r => !r.load || r.bare.length || r.dim.length || r.spill.length || r.inline.length || r.over > 0 || r.dock > 1)
+		});
+		return;
+	}
+
+	/* flicker=1: what moves while a page is being drawn. Each line is the time in
+	   ms and a piece that changed place, size or content; after them the layout
+	   shifts the browser counted. A stable page has one line per piece. */
+	if (q.get('flicker')) {
+		const pieces = {
+			alert: el => el.querySelector('#maincontent > .alert-message'),
+			view: el => el.querySelector('#view'),
+			side: el => el.querySelector('#o-side'),
+			tabs: el => el.querySelector('#tabmenu'),
+			top: el => el.querySelector('#o-home-top'),
+			devices: el => el.querySelector('#o-devices'),
+			columns: el => el.querySelector('#o-home-cols')
+		};
+		const was = {}, lines = [], start = performance.now();
+
+		const sample = () => {
+			const doc = frame.contentDocument;
+
+			if (!doc || !doc.body || doc.location.href == 'about:blank')
+				return;
+
+			for (const name in pieces) {
+				const el = pieces[name](doc);
+				const box = el ? el.getBoundingClientRect() : null;
+				const now = !box ? 'none' : [ box.left, box.top, box.width, box.height ].map(Math.round).join(' ')
+					+ ((name == 'side') ? ' items=' + el.querySelectorAll('a').length : '');
+
+				if (was[name] !== now) {
+					was[name] = now;
+					lines.push(Math.round(performance.now() - start) + ' ' + name + ' ' + now);
+				}
+			}
+		};
+
+		const ticker = setInterval(sample, 4);
+		frame.src = q.get('u') || '/cgi-bin/luci/';
+		await sleep(+(q.get('flicker')) > 1 ? +q.get('flicker') : 4000);
+		clearInterval(ticker);
+
+		const shifts = await new Promise(done => {
+			const got = [];
+			new frame.contentWindow.PerformanceObserver(list => list.getEntries().forEach(e => got.push(e)))
+				.observe({ type: 'layout-shift', buffered: true });
+			setTimeout(() => done(got), 300);
+		});
+
+		out.textContent = JSON.stringify({
+			changes: lines,
+			shifts: shifts.map(e => Math.round(e.startTime) + ' value=' + e.value.toFixed(3) + ' ' + e.sources.map(s =>
+				(s.node ? (s.node.id || s.node.className || s.node.nodeName) : '?') + ' y' + Math.round(s.previousRect.top) + '>' + Math.round(s.currentRect.top) + ' x' + Math.round(s.previousRect.left) + '>' + Math.round(s.currentRect.left)
+			).join(', '))
+		});
+		return;
+	}
+
+	const loaded = new Promise(done => frame.addEventListener('load', done, { once: true }));
+	frame.src = q.get('u') || '/cgi-bin/luci/';
+	await loaded;
+
+	const w = frame.contentWindow, d = frame.contentDocument;
+	const unseen = (d.visibilityState != 'visible');
+
+	/* A window that is covered, minimised or behind a locked screen draws no
+	   frames, and LuCI sends its RPC batches from requestAnimationFrame, so no
+	   view would ever finish loading there. Run those callbacks from a timer.
+	   Timers are slowed down in such a window too: expect a run to take a while. */
+	if (unseen) {
+		w.requestAnimationFrame = fn => w.setTimeout(() => fn(w.performance.now()), 16);
+		w.cancelAnimationFrame = id => w.clearTimeout(id);
+
+		/* what was queued before this point goes out with the next request */
+		if (w.L && w.L.require)
+			w.L.require('rpc').then(rpc => rpc.declare({ object: 'system', method: 'board' })()).catch(() => {});
+	}
+
+	await phone(d);
+
+	/* until the menu is built and the view has replaced its spinner */
+	for (let i = 0; i < 150; i++) {
+		if (d.querySelector('.o-login') || (d.querySelector('#topmenu li') && !d.querySelector('#view > .spinning')))
+			break;
+
+		await sleep(100);
+	}
+
+	await sleep(+(q.get('settle') || 500));
+
+	const key = (target, name, more) => target.dispatchEvent(
+		new w.KeyboardEvent('keydown', Object.assign({ key: name, bubbles: true, cancelable: true }, more || {})));
+	const log = [];
+
+	for (const step of (q.get('a') || '').split(';').filter(Boolean)) {
+		const cut = step.indexOf(':');
+		const name = (cut < 0) ? step : step.slice(0, cut);
+		const arg = (cut < 0) ? '' : step.slice(cut + 1);
+
+		try {
+			if (name == 'launcher') {
+				key(d.body, 'k', { ctrlKey: true });
+			}
+			else if (name == 'slash') {
+				key(d.body, '/');
+			}
+			else if (name == 'type') {
+				const input = d.querySelector('#o-launcher input');
+				input.value = arg;
+				input.dispatchEvent(new w.Event('input', { bubbles: true }));
+			}
+			else if (name == 'key') {
+				const parts = arg.split('*');
+				for (let n = 0; n < (+parts[1] || 1); n++)
+					key(d.activeElement || d.body, parts[0]);
+			}
+			else if (name == 'focus') {
+				d.querySelector(arg).focus();
+			}
+			else if (name == 'click') {
+				d.querySelector(arg).click();
+			}
+			else if (name == 'scroll') {
+				w.scrollTo(0, +arg);
+			}
+			else if (name == 'wait') {
+				await sleep(+arg);
+			}
+			else if (name == 'attr') {
+				const parts = arg.split('@');
+				log.push(parts[1] + '=' + d.querySelector(parts[0]).getAttribute(parts[1]));
+			}
+			else if (name == 'css') {
+				const parts = arg.split('@');
+				log.push(parts[1] + '=' + w.getComputedStyle(d.querySelector(parts[0])).getPropertyValue(parts[1]).trim());
+			}
+			else if (name == 'count') {
+				log.push(arg + ' x' + d.querySelectorAll(arg).length);
+			}
+			else if (name == 'eval') {
+				const got = w.eval(arg);
+				if (got !== undefined && typeof got != 'object')
+					log.push(String(got));
+			}
+			else if (name == 'box') {
+				const el = d.querySelector(arg), box = el.getBoundingClientRect();
+				log.push(arg + ' x=' + Math.round(box.left) + ' y=' + Math.round(box.top) + ' w=' + Math.round(box.width) + ' h=' + Math.round(box.height) + ' scrollW=' + el.scrollWidth);
+			}
+			else {
+				log.push('unknown step ' + name);
+			}
+		}
+		catch (e) {
+			log.push(name + ' failed: ' + e.message);
+		}
+
+		await sleep(120);
+	}
+
+	const root = d.documentElement;
+	const wide = [];
+
+	/* what sticks out of the frame on the right */
+	d.querySelectorAll('body *').forEach(el => {
+		const box = el.getBoundingClientRect();
+
+		if (!box.width || box.right <= root.clientWidth + 1 || wide.length >= 6 || el.closest('.dropdown-menu, .cbi-tooltip'))
+			return;
+
+		wide.push((el.id ? '#' + el.id : el.tagName.toLowerCase() + '.' + String(el.getAttribute('class') || '').trim().split(' ').join('.')) + ' ' + Math.round(box.right));
+	});
+
+	const launcher = d.querySelector('#o-launcher');
+	const bar = d.querySelector('header');
+
+	out.textContent = JSON.stringify({
+		url: w.location.pathname,
+		size: root.clientWidth + 'x' + root.clientHeight,
+		phone: !!q.get('phone'),
+		unseen: unseen,
+		overflowX: root.scrollWidth - root.clientWidth,
+		palette: root.getAttribute('data-palette'),
+		served: root.getAttribute('data-served-palette'),
+		dark: root.getAttribute('data-darkmode'),
+		stored: w.localStorage.getItem('omarchy.palette'),
+		bar: bar ? bar.offsetHeight : null,
+		launcher: launcher ? !launcher.hidden : false,
+		focus: d.activeElement ? d.activeElement.tagName + (d.activeElement.id ? '#' + d.activeElement.id : '') : null,
+		wide: wide,
+		log: log
+	});
+})().catch(function(e) {
+	document.getElementById('out').textContent = 'harness error: ' + e.message;
+});
+</script>

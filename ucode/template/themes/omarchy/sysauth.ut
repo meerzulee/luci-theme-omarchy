@@ -1,0 +1,83 @@
+{#
+ Derived from luci-theme-bootstrap:
+ Copyright 2022 Jo-Philipp Wich <jo@mein.io>
+ Licensed to the public under the Apache License 2.0.
+-#}
+
+{% include('header', { blank_page: true }) %}
+
+<main class="o-login">
+	<form method="post" class="o-login-box">
+		<h1>{{ striptags(ubus.call('system', 'board')?.hostname ?? '?') }}</h1>
+		<p>{{ _('Authorization Required') }}</p>
+
+		{% if (auth_message): %}
+		<div class="alert-message{% if (auth_plugin): %} warning{% endif %}">
+			{{ entityencode(auth_message, true) }}
+		</div>
+		{% elif (fuser): %}
+		<div class="alert-message error">
+			{{ _('Invalid username and/or password! Please try again.') }}
+		</div>
+		{% endif %}
+
+		<label for="luci_username">{{ _('Username') }}</label>
+		<input name="luci_username" id="luci_username" type="text" autocomplete="username" value="{{ entityencode(duser, true) }}">
+
+		<label for="luci_password">{{ _('Password') }}</label>
+		<input name="luci_password" id="luci_password" type="password" autocomplete="current-password" autofocus>
+
+		{#- Login plugins exist in LuCI newer than 25.12; these names are unset before that. -#}
+		{% if (auth_fields): %}
+			{% for (let field in auth_fields): %}
+				<label for="{{ entityencode(field.name, true) }}">{{ entityencode(_(field.label ?? field.name), true) }}</label>
+				<input
+					name="{{ entityencode(field.name, true) }}"
+					id="{{ entityencode(field.name, true) }}"
+					type="{{ entityencode(field.type ?? 'text', true) }}"
+					{% if (field.placeholder): %}placeholder="{{ entityencode(field.placeholder, true) }}"{% endif %}
+					{% if (field.inputmode): %}inputmode="{{ entityencode(field.inputmode, true) }}"{% endif %}
+					{% if (field.pattern): %}pattern="{{ entityencode(field.pattern, true) }}"{% endif %}
+					{% if (field.maxlength): %}maxlength="{{ entityencode(field.maxlength, true) }}"{% endif %}
+					{% if (field.autocomplete): %}autocomplete="{{ entityencode(field.autocomplete, true) }}"{% endif %}
+					{% if (field.required): %}required{% endif %}
+				>
+			{% endfor %}
+		{% endif %}
+		{% if (auth_html): %}
+			<div>{{ auth_html }}</div>
+		{% endif %}
+		{% if (auth_assets): %}
+			{% for (let asset in auth_assets): %}
+				{% if (asset.type == 'script'): %}
+					<script src="{{ entityencode(asset.src, true) }}"></script>
+				{% endif %}
+			{% endfor %}
+		{% endif %}
+
+		<button class="btn cbi-button-action important" type="submit" data-busy="{{ entityencode(_('Logging in…'), true) }}">{{ _('Log in') }}</button>
+	</form>
+</main>
+
+<script>
+	/* A slow router gives no sign that the form went through, and a second click
+	   would send it twice. Coming back to this page must leave the button usable. */
+	(function(form) {
+		var button = form.querySelector('button[type="submit"]'), label = button.textContent;
+
+		form.addEventListener('submit', function(ev) {
+			if (button.disabled)
+				return ev.preventDefault();
+
+			button.textContent = button.getAttribute('data-busy');
+			setTimeout(function() { button.disabled = true }, 0);
+		});
+
+		addEventListener('pageshow', function() {
+			button.disabled = false;
+			button.textContent = label;
+		});
+	})(document.querySelector('.o-login-box'));
+</script>
+
+{% include('footer', { blank_page: true }) %}

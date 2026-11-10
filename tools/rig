@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# Local test rig for luci-theme-omarchy: a stock OpenWrt root filesystem in Docker.
+#
+# The theme is installed the way luci.mk installs a package (htdocs -> /www,
+# ucode -> /usr/share/ucode/luci, root -> /, version stamps, optional jsmin, then
+# the uci-defaults script), so what the rig shows is what a built package shows.
+#
+#   tools/rig up            create and start the container
+#   tools/rig sync [--min]  stage, push and register the theme (--min runs jsmin)
+#   tools/rig use <name>    activate a registered theme (omarchy, omarchy-nord, bootstrap, ...)
+#   tools/rig size          print the compressed size of the staged package
+#   tools/rig harness       install the test harness page (see tools/harness.html)
+#   tools/rig sh [cmd...]   run a command (or a shell) in the container
+#   tools/rig down          remove the container
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+NAME="${RIG_NAME:-luci-rig}"
+PORT="${RIG_PORT:-8088}"
+RELEASE="${RIG_RELEASE:-25.12.6}"
+TARGET="${RIG_TARGET:-armsr/armv8}"
+ROOTFS="openwrt-${RELEASE}-${TARGET//\//-}-rootfs.tar.gz"
+ROOTFS_SHA256="${RIG_ROOTFS_SHA256:-8fcb00eb886d9add37e111a4ec43d47d57aa74742281c6a8f348a7a7ec37edb7}"
+IMAGE="luci-rig:${RELEASE}"
+CACHE="${RIG_CACHE:-$HERE/tools/.cache}"
+# LuCI commit the 25.12.6 release was built from; jsmin.c is taken from it.
+LUCI_COMMIT="75a306df84a020c57a631ef5b4c02ace56d93387"
+# How much the squashfs may grow on the reference device before its audit fails.
+MARGIN_KIB="${RIG_MARGIN_KIB:-192}"
+
+die() { echo "rig: $*" >&2; exit 1; }
+
+sha256() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
+
+cmd_up() {
+	if docker ps -a --format '{{.Names}}' | grep -qx "$NAME"; then
+		docker start "$NAME" >/dev/null
+	else
+		if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+			mkdir -p "$CACHE"
+			[ -f "$CACHE/$ROOTFS" ] || curl -fsSL -o "$CACHE/$ROOTFS" \
+				"https://downloads.openwrt.org/releases/${RELEASE}/targets/${TARGET}/${ROOTFS}"
+			[ "$(sha256 "$CACHE/$ROOTFS")" = "$ROOTFS_SHA256" ] || die "checksum mismatch for $ROOTFS"
+			docker import "$CACHE/$ROOTFS" "$IMAGE" >/dev/null
+		fi
+		# Loopback only: the stock image has an empty root password.
+		docker run -d --name "$NAME" --hostname omarchy-rig -p "127.0.0.1:${PORT}:80" "$IMAGE" /sbin/init >/dev/null
+	fi
+	for _ in $(seq 1 30); do
+		docker exec "$NAME" ubus call system board >/dev/null 2>&1 && break
+		sleep 1
+	done
+	docker exec "$NAME" ubus call system board >/dev/null 2>&1 || die "container did not come up"
+	# The stock config bridges eth0 into br-lan. An unprivileged container may not
+	# do that, and netifd then stops answering, which stalls every status page.
+	docker exec "$NAME" sh -c '
+		[ "$(uci -q get network.lan.proto)" = none ] && exit 0
+		# no upgrade prompt on the status page, and no calls out from the rig
+		uci -q set attendedsysupgrade.client.login_check_for_upgrades=0 && uci commit attendedsysupgrade
+		uci -q delete network.@device[0]
+		uci set network.lan.device=eth0
+		uci set network.lan.proto=none
+		uci -q delete network.lan.ipaddr
+		uci -q delete network.lan.ip6assign
+		uci commit network
+		kill -9 $(pidof netifd) 2>/dev/null
+		/etc/init.d/network restart >/dev/null 2>&1 &
+		sleep 5'
+	echo "rig: http://127.0.0.1:${PORT}/cgi-bin/luci/"
+}
+
+ensure_jsmin() {
+	JSMIN="${JSMIN:-$CACHE/jsmin}"
+	[ -x "$JSMIN" ] && return
+	mkdir -p "$CACHE"
+	curl -fsSL -o "$CACHE/jsmin.c" \
+		"https://raw.githubusercontent.com/openwrt/luci/${LUCI_COMMIT}/modules/luci-base/src/jsmin.c"
+	cc -O2 -w -o "$CACHE/jsmin" "$CACHE/jsmin.c"
+	JSMIN="$CACHE/jsmin"
+}
+
+# Build the tree a package would install. Prints the staging directory.
+stage() {
+	local minify="$1" version="$2" stage
+	stage="$(mktemp -d)"
+	mkdir -p "$stage/www" "$stage/usr/share/ucode/luci"
+	cp -pR "$HERE"/htdocs/* "$stage/www/"
+	cp -pR "$HERE"/ucode/* "$stage/usr/share/ucode/luci/"
+	cp -pR "$HERE"/root/* "$stage/"
+	# luci.mk SubstituteVersion
+	find "$stage/usr/share/ucode/luci" -type f -name '*.ut' -print0 | xargs -0 perl -pi -e '
+		s/\{# *([^ ]*)PKG_VERSION *#\}/$1'"$version"'/g;
+		s/"(\{\{ *(?:media|resource) *\}\}[^"]*\.(?:js|css))"/"$1?v='"$version"'"/g;'
+	if [ "$minify" = 1 ]; then
+		ensure_jsmin
+		# luci.mk JsMin: a file is replaced only when jsmin exits 0
+		find "$stage/www" -type f -name '*.js' | while read -r src; do
+			if "$JSMIN" < "$src" > "$src.o"; then mv "$src.o" "$src"; else rm -f "$src.o"; fi
+		done
+	fi
+	echo "$stage"
+}
+
+report_size() {
+	local stage="$1" raw xzb
+	raw=$(find "$stage" -type f -exec cat {} + | wc -c | tr -d ' ')
+	xzb=$(tar -C "$stage" -cf - . | xz -9 -c | wc -c | tr -d ' ')
+	printf 'rig: %d files, %d KiB raw, %d KiB tar.xz (margin %d KiB)\n' \
+		"$(find "$stage" -type f | wc -l | tr -d ' ')" $((raw / 1024)) $(((xzb + 1023) / 1024)) "$MARGIN_KIB"
+	[ $(((xzb + 1023) / 1024)) -le "$MARGIN_KIB" ] || die "package exceeds the size margin"
+}
+
+cmd_sync() {
+	local minify=0 version stage
+	[ "${1:-}" = "--min" ] && minify=1
+	version="0.$(date +%s)"
+	stage="$(stage "$minify" "$version")"
+	report_size "$stage"
+	# Drop what an earlier sync installed, so removed files do not linger.
+	docker exec "$NAME" sh -c '
+		rm -rf /www/luci-static/omarchy* /usr/share/ucode/luci/template/themes/omarchy* \
+			/www/luci-static/resources/menu-omarchy.js /www/luci-static/resources/omarchy-*.js \
+			/www/luci-static/resources/view/omarchy'
+	# Files and symlinks only, extracted without ownership: a directory entry would
+	# carry the staging directory's mode and owner onto / in the container.
+	(cd "$stage" && find . \( -type f -o -type l \) -print0 | COPYFILE_DISABLE=1 tar --null -T - -cf -) \
+		| docker exec -i "$NAME" tar -C / -xof -
+	# default_postinst: run each uci-defaults script once, then delete it
+	for f in "$stage"/etc/uci-defaults/*; do
+		[ -f "$f" ] || continue
+		docker exec "$NAME" sh -c "( . /etc/uci-defaults/$(basename "$f") ) && rm -f /etc/uci-defaults/$(basename "$f")"
+	done
+	docker exec "$NAME" sh -c '
+		find /www/luci-static/omarchy /usr/share/ucode/luci/template/themes/omarchy \
+			/www/luci-static/resources/view/omarchy -type d -exec chmod 755 {} + 2>/dev/null
+		rm -f /tmp/luci-indexcache.*; rm -rf /tmp/luci-modulecache/'
+	rm -rf "$stage"
+	echo "rig: synced version $version$([ "$minify" = 1 ] && echo ' (jsmin)')"
+}
+
+cmd_use() {
+	local theme="${1:?usage: rig use <theme>}"
+	docker exec "$NAME" sh -c "
+		[ -d /www/luci-static/$theme ] || { echo 'no such theme: $theme' >&2; exit 1; }
+		uci set luci.main.mediaurlbase=/luci-static/$theme && uci commit luci"
+	echo "rig: active theme $theme"
+}
+
+cmd_size() {
+	local stage
+	stage="$(stage 1 0)"
+	report_size "$stage"
+	rm -rf "$stage"
+}
+
+cmd_harness() {
+	docker exec -i "$NAME" sh -c 'cat > /www/omarchy-harness.html && chmod 644 /www/omarchy-harness.html' < "$HERE/tools/harness.html"
+	echo "rig: http://127.0.0.1:${PORT}/omarchy-harness.html"
+}
+
+case "${1:-}" in
+	up) cmd_up ;;
+	sync) shift; cmd_sync "$@" ;;
+	use) shift; cmd_use "$@" ;;
+	size) cmd_size ;;
+	harness) cmd_harness ;;
+	sh) shift; if [ $# -gt 0 ]; then docker exec "$NAME" "$@"; else docker exec -it "$NAME" sh; fi ;;
+	down) docker rm -f "$NAME" >/dev/null && echo "rig: removed" ;;
+	*) sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

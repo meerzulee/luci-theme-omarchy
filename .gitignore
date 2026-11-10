@@ -1,0 +1,5 @@
+# downloads and builds of tools/rig
+tools/.cache/
+
+.DS_Store
+__pycache__/

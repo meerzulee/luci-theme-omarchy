@@ -1,0 +1,30 @@
+{#
+ Derived from luci-theme-bootstrap:
+ Copyright 2008-2022 Jo-Philipp Wich <jo@mein.io>
+ Licensed to the public under the Apache License 2.0.
+-#}
+		{% if (!blank_page): %}
+		</div>
+		</div>
+		<footer>
+			<span id="o-status"></span>
+			{%- let all_versions = sprintf("%s %s (%s)\n%s (%s)", version.distname, version.distversion, version.distrevision, version.luciname, version.luciversion);
+			    if (lua_active) all_versions += "\n" + _('Lua compatibility mode active'); %}
+			<div class="o-foot-right" data-full="{{ entityencode(all_versions, true) }}">
+				<span class="o-foot-info">
+					<a href="{{ entityencode(version.disturl ?? '#', true) }}" target="_blank" rel="noreferrer">
+						{{ version.distname }} {{ version.distversion }} ({{ version.distrevision }})</a>
+					/
+					<a href="https://github.com/openwrt/luci" target="_blank" rel="noreferrer">
+						{{ version.luciname }} ({{ version.luciversion }})</a>
+					{% if (lua_active): %}
+						/ {{ _('Lua compatibility mode active') }}
+					{% endif %}
+				</span>
+				<ul class="breadcrumb pull-right" id="modemenu" style="display:none"></ul>
+			</div>
+		</footer>
+		<script>L.require('menu-omarchy')</script>
+		{% endif %}
+	</body>
+</html>
