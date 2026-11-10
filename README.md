@@ -70,7 +70,27 @@ an Omarchy machine has and falls back to the monospace font of the system.
   that release and has not been tried on older ones.
 - A browser from 2024 or later. The stylesheet uses `:has()` and `backdrop-filter`.
 
-## Building and installing
+## Installing
+
+### From a release
+
+[Releases](https://github.com/meerzulee/luci-theme-omarchy/releases) carry the
+package as CI built it with the OpenWrt 25.12.6 SDK. The theme has no compiled
+code, so the one file installs on every target. On the router:
+
+```sh
+cd /tmp
+wget https://github.com/meerzulee/luci-theme-omarchy/releases/download/v0.1.0/luci-theme-omarchy-0.1.0-r1.apk
+apk add --allow-untrusted luci-theme-omarchy-0.1.0-r1.apk
+```
+
+A router that cannot reach GitHub can be given the file from a computer:
+`scp -O luci-theme-omarchy-0.1.0-r1.apk root@192.168.1.1:/tmp/`. The `-O` is
+needed because Dropbear has no SFTP server. `--allow-untrusted` is needed
+because each build signs the package with a key of its own, which no router
+knows. Each release lists the SHA-256 of the file in `sha256sums`.
+
+### From source
 
 The package is built out of tree against the LuCI feed.
 
@@ -85,8 +105,9 @@ The package is built out of tree against the LuCI feed.
    `feeds/luci/luci.mk`.
 3. Select *LuCI → Themes → luci-theme-omarchy* in `make menuconfig`, or build
    the package alone with `make package/luci-theme-omarchy/compile`.
-4. To add it to a running router, copy the `.apk` over and run
-   `apk add --allow-untrusted luci-theme-omarchy-*.apk`.
+4. Install the `.apk` from `bin/packages/<arch>/base/` as above.
+
+### Using it
 
 Installing the package registers the theme and leaves the current design alone.
 Switch to it under *System → System → Language and Style → Design*, or from a
@@ -111,6 +132,16 @@ Removing the package puts the design back to Bootstrap when Omarchy was in use.
 To make the theme the default of a firmware image, add the two `uci` lines above
 to a script in `files/etc/uci-defaults/` of the image. Give it a name that sorts
 after `30_luci-theme-omarchy`, for example `99_theme`.
+
+### Releasing
+
+`.github/workflows/build.yml` builds the package in the OpenWrt 25.12.6 SDK on
+every pull request and push to `master`. It fails when the package does not come
+out under the name the Makefile gives it, or when the palette aliases stopped
+being links. A pushed tag `v` followed by `PKG_VERSION` (for example `v0.1.0`)
+is built the same way and published as a pre-release; a tag that does not match
+`PKG_VERSION` fails. Mark a pre-release as a release by hand once it has run on
+a router.
 
 ## Palettes
 
@@ -255,7 +286,8 @@ downloads.openwrt.org and checks its SHA-256.
 
 ## Size
 
-14 files and 46 links, about 223 KiB unpacked and about 56 KiB compressed.
+14 files and 46 links, about 225 KiB unpacked. The package, with its signature
+and file list, is 64 KiB.
 
 ## Status
 
@@ -271,10 +303,15 @@ list or Esc puts the kept wallpaper back, and a failed download unticks the box
 again. The Internet and Devices windows ran against a made-up WAN connection and
 made-up leases in the rig.
 
+The package builds in the OpenWrt 25.12.6 SDK for x86-64 and installs with `apk`
+into a fresh rig, which is aarch64. It puts the same files and links in place as
+the rig's own install, identical but for the version stamps in `header.ut`,
+registers the palettes and leaves the current design alone. With a palette alias
+as the design, the login page and the overview are drawn by the theme. Removed
+again, it hands the design back to Bootstrap.
+
 Not checked yet:
 
-- a build of the package in a buildroot (the Makefile follows the in-tree
-  themes)
 - a real router and a real phone
 - devices on Wi-Fi in the Devices window, because the rig has no radio
 - Firefox and Safari
