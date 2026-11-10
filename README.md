@@ -5,6 +5,8 @@ A theme for LuCI, the OpenWrt web interface, that draws the router as an
 across the top, glass windows over the blurred wallpaper of the theme, monospace
 type, a keyboard launcher, and the Omarchy colour palettes.
 
+![The home screen in the Kanagawa theme, over its wallpaper](docs/screenshots/home.jpg)
+
 This is an unofficial project. It is not affiliated with or endorsed by Omarchy
 or by OpenWrt.
 
@@ -48,6 +50,14 @@ or by OpenWrt.
 - **Palettes.** The 23 colour schemes that Omarchy ships, each checked for
   contrast when the stylesheet is generated.
 - **Login.** Built like the Omarchy lock screen: the blurred backdrop and one box.
+
+| The list of themes, with Omarchy's wallpapers | A menu of the bar |
+| --- | --- |
+| ![The list of themes, open over the home screen](docs/screenshots/themes.jpg) | ![The System menu, open over the Interfaces page](docs/screenshots/menu.jpg) |
+
+| The launcher: pages, palettes and settings | The login screen |
+| --- | --- |
+| ![The launcher, with the results for "ro"](docs/screenshots/launcher.jpg) | ![The login screen over the blurred wallpaper](docs/screenshots/login.jpg) |
 
 The package contains no wallpaper images and no Omarchy logo. A backdrop is 40
 colours per palette, which is why it fits on a small router. The only font
@@ -120,6 +130,8 @@ Palettes: Catppuccin, Catppuccin Latte, Ethereal, Everforest, Flexoki Light,
 Gruvbox, Hackerman, Jade Horse, Kanagawa, Last Horizon, Lumon, Lupine, Matte
 Black, Miasma, Nord, Retro 82, Ristretto, Rose Pine, Solitude, Starship, Tokyo
 Night, Vantablack, White.
+
+![Tokyo Night, Catppuccin Latte, Rose Pine and Gruvbox, each on its own backdrop](docs/screenshots/palettes.jpg)
 
 ### Adding or changing a palette
 
@@ -213,6 +225,7 @@ root/etc/uci-defaults/                    generated: registers the theme and its
 palettes/                                 colour sources, from Omarchy
 backdrops.toml                            colours sampled from the Omarchy wallpapers
 tools/                                    generators and test rig, not packaged
+docs/screenshots/                         pictures for this README, not packaged
 ```
 
 `base.css` and `base-mobile.css` are copies of `cascade.css` and `mobile.css`
@@ -279,6 +292,10 @@ Not checked yet:
   Everforest, Flexoki, Gruvbox, Kanagawa, Nord, Rosé Pine and Tokyo Night.
   `backdrops.toml` holds average colours of the wallpapers of those themes,
   which are works of various artists; none of the pictures is included here.
+  The screenshots in `docs/screenshots/` show only the wallpaper of the Kanagawa
+  theme, *The Great Wave off Kanagawa* by Katsushika Hokusai, which is in the
+  public domain. They were taken in the test rig; the devices and the figures of
+  the system in them are made up.
 - **Nerd Fonts** by Ryan L McIntyre and contributors, MIT licence,
   <https://github.com/ryanoasis/nerd-fonts>, and **Material Design Icons** by
   Pictogrammers, Apache License 2.0, <https://pictogrammers.com/library/mdi/>.
