@@ -72,11 +72,18 @@ jobs:
           # cp -a keeps the palette aliases as symbolic links.
           cp -a ../theme package/luci-theme-omarchy
           # Select this package (and what it depends on), not every package the SDK knows.
+          # The SDK removes a package's build directory once it is built
+          # (AUTOREMOVE, on by default there); the next step reads the package
+          # tree from it, so it stays.
           printf '%s\n' CONFIG_ALL=n CONFIG_ALL_KMODS=n CONFIG_ALL_NONSHARED=n \
-            CONFIG_PACKAGE_luci-theme-omarchy=m > .config
+            '# CONFIG_AUTOREMOVE is not set' CONFIG_PACKAGE_luci-theme-omarchy=m > .config
           make defconfig
           if ! grep -qx 'CONFIG_PACKAGE_luci-theme-omarchy=m' .config; then
             echo "::error::make defconfig dropped luci-theme-omarchy"
+            exit 1
+          fi
+          if grep -qx 'CONFIG_AUTOREMOVE=y' .config; then
+            echo "::error::make defconfig turned AUTOREMOVE back on"
             exit 1
           fi
           make -j"$(nproc)" package/luci-theme-omarchy/compile ||
@@ -95,6 +102,7 @@ jobs:
           tree=$(find sdk/build_dir -type d -path '*/ipkg-*/luci-theme-omarchy' | head -n 1)
           if [ -z "$tree" ]; then
             echo "::error::no package tree under sdk/build_dir"
+            find sdk/build_dir -maxdepth 4 -path '*luci-theme-omarchy*' | head -n 20
             exit 1
           fi
           links=$(find "$tree" -type l | wc -l)
