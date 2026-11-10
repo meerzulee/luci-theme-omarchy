@@ -1,0 +1,151 @@
+# Builds the package in the OpenWrt SDK on every pull request and push.
+# A tag v<PKG_VERSION> also publishes the package as a pre-release.
+name: build
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The theme has no compiled code (PKGARCH all), so a package built with the
+  # SDK of one target installs on every target of the release.
+  SDK_URL: https://downloads.openwrt.org/releases/25.12.6/targets/x86/64
+  SDK_FILE: openwrt-sdk-25.12.6-x86-64_gcc-14.3.0_musl.Linux-x86_64.tar.zst
+  SDK_SHA256: 1864152619092e781fa36a401960c8e9ae42d6a364c44ee5f0b197ca5f3c0fcc
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: theme
+          persist-credentials: false
+
+      - name: Read the version
+        id: version
+        run: |
+          version=$(sed -n 's/^PKG_VERSION:=//p' theme/Makefile)
+          release=$(sed -n 's/^PKG_RELEASE:=//p' theme/Makefile)
+          if [ -z "$version" ] || [ -z "$release" ]; then
+            echo "::error::PKG_VERSION or PKG_RELEASE missing from the Makefile"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match PKG_VERSION $version"
+            exit 1
+          fi
+          echo "apk=luci-theme-omarchy-$version-r$release.apk" >> "$GITHUB_OUTPUT"
+
+      - name: Install the host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gawk gettext libncurses-dev libssl-dev python3-setuptools rsync unzip zlib1g-dev zstd
+
+      - name: Fetch the SDK
+        run: |
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$SDK_FILE" "$SDK_URL/$SDK_FILE"
+          echo "$SDK_SHA256  $RUNNER_TEMP/$SDK_FILE" | sha256sum -c -
+          mkdir sdk
+          tar -C sdk --strip-components=1 --zstd -xf "$RUNNER_TEMP/$SDK_FILE"
+
+      - name: Install the feeds
+        working-directory: sdk
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Build the package
+        working-directory: sdk
+        run: |
+          # cp -a keeps the palette aliases as symbolic links.
+          cp -a ../theme package/luci-theme-omarchy
+          # Select this package (and what it depends on), not every package the SDK knows.
+          printf '%s\n' CONFIG_ALL=n CONFIG_ALL_KMODS=n CONFIG_ALL_NONSHARED=n \
+            CONFIG_PACKAGE_luci-theme-omarchy=m > .config
+          make defconfig
+          if ! grep -qx 'CONFIG_PACKAGE_luci-theme-omarchy=m' .config; then
+            echo "::error::make defconfig dropped luci-theme-omarchy"
+            exit 1
+          fi
+          make -j"$(nproc)" package/luci-theme-omarchy/compile ||
+            make -j1 V=s package/luci-theme-omarchy/compile
+
+      - name: Check the package
+        env:
+          APK: ${{ steps.version.outputs.apk }}
+        run: |
+          found=$(find sdk/bin -name 'luci-theme-omarchy-*.apk')
+          echo "$found"
+          if [ "$(printf '%s\n' "$found" | grep -c .)" != 1 ] || [ "$(basename "$found")" != "$APK" ]; then
+            echo "::error::expected exactly one package, named $APK"
+            exit 1
+          fi
+          tree=$(find sdk/build_dir -type d -path '*/ipkg-*/luci-theme-omarchy' | head -n 1)
+          if [ -z "$tree" ]; then
+            echo "::error::no package tree under sdk/build_dir"
+            exit 1
+          fi
+          links=$(find "$tree" -type l | wc -l)
+          echo "$(find "$tree" -type f | wc -l) files, $links links, $(du -sk "$tree" | cut -f1) KiB unpacked, $(du -k "$found" | cut -f1) KiB packed"
+          if [ "$links" -eq 0 ]; then
+            echo "::error::the palette aliases were copied as files, not links"
+            exit 1
+          fi
+          mkdir out
+          cp "$found" out/
+          (cd out && sha256sum "$APK" > sha256sums && cat sha256sums)
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: luci-theme-omarchy
+          path: out/
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: luci-theme-omarchy
+          path: out
+
+      - name: Publish a pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          apk=$(cd out && ls luci-theme-omarchy-*.apk)
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$apk"
+          cat > notes.md <<EOF
+          Built by CI with the OpenWrt 25.12.6 SDK. The theme has no compiled code, so this one package installs on every target of OpenWrt 25.12.
+
+          On the router:
+
+              cd /tmp
+              wget $url
+              apk add --allow-untrusted $apk
+
+          Then choose Omarchy under System → System → Language and Style → Design.
+
+          The package is signed with a key made for this one build, which no router knows, so apk needs --allow-untrusted. The file sha256sums holds its checksum.
+
+          Tags are published as pre-releases and marked as releases by hand once they have run on a router.
+          EOF
+          gh release create "$GITHUB_REF_NAME" out/"$apk" out/sha256sums \
+            --verify-tag --prerelease --title "luci-theme-omarchy $GITHUB_REF_NAME" --notes-file notes.md
