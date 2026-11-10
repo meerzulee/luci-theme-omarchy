@@ -21,6 +21,17 @@ const STORE = 'omarchy.palette';
 const LOOK = 'omarchy.look';
 const root = document.documentElement;
 
+/* Whether Omarchy's wallpapers are in use, which then go with the palettes;
+   see omarchy-settings.js. */
+function wallFollows() {
+	try {
+		return (JSON.parse(localStorage.getItem(LOOK)) || {}).wall == 'omarchy';
+	}
+	catch (e) {
+		return false;
+	}
+}
+
 /* The glyphs of Omarchy's own menu and bar where a router has the same thing,
    from the same set where it has something else: Material Design Icons, numbered
    as in Nerd Fonts. Adding one here means running tools/gen-icons.py. */
@@ -858,7 +869,7 @@ return baseclass.extend({
 
 		/* walking the list with the keyboard tries each palette on */
 		if (preview)
-			this.paint((item.kind == 'palette') ? item.id : this.before);
+			this.paint((item.kind == 'palette') ? item.id : this.before, item.kind == 'palette');
 	},
 
 	run() {
@@ -910,8 +921,19 @@ return baseclass.extend({
 		}
 	},
 
-	/* Show a palette without remembering it. No id stands for the default one. */
-	paint(id) {
+	/* Show a palette without remembering it. No id stands for the default one.
+	   Trying one on brings its wallpaper along while Omarchy's wallpapers are in
+	   use; anything else puts back the wallpaper that is kept. */
+	paint(id, trying) {
+		if (trying && wallFollows()) {
+			this.trying = true;
+			L.require('omarchy-settings').then(function(settings) { settings.tryOn(id) });
+		}
+		else if (this.trying) {
+			this.trying = false;
+			L.require('omarchy-settings').then(function(settings) { settings.untry() });
+		}
+
 		if ((root.getAttribute('data-palette') || null) === (id || null))
 			return;
 
@@ -934,6 +956,8 @@ return baseclass.extend({
 	keep(id) {
 		const served = root.getAttribute('data-served-palette');
 
+		/* what was tried on is the choice now, nothing to put back */
+		this.trying = false;
 		this.paint(id);
 
 		try {
@@ -945,10 +969,7 @@ return baseclass.extend({
 		catch (e) {}
 
 		/* Omarchy's wallpapers go with the palettes, so this one has to follow */
-		try {
-			if ((JSON.parse(localStorage.getItem(LOOK)) || {}).wall == 'omarchy')
-				L.require('omarchy-settings').then(function(settings) { settings.loadOmarchy(id) });
-		}
-		catch (e) {}
+		if (wallFollows())
+			L.require('omarchy-settings').then(function(settings) { settings.loadOmarchy(id) });
 	}
 });

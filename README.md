@@ -39,6 +39,8 @@ or by OpenWrt.
   also while you try palettes on.
 - **Themes.** The name of the theme in the bar opens a list of all of Omarchy's
   themes. Pointing at one tries it on, clicking keeps it and closes the list.
+  The tick box *With Omarchy's wallpapers* at the top of the list makes both
+  happen with the real wallpaper of the theme.
 - **Settings.** The cog in the bar opens a panel for the wallpaper, the widgets
   of the home screen and the dock.
 - **Launcher.** `Ctrl+K` (`Cmd+K` on a Mac) or `/` opens a search over every
@@ -166,7 +168,11 @@ browser, per browser, like the choice of theme. Nothing is stored on the router.
   are the wallpapers Omarchy has for the current theme: pressing one downloads it
   from the Omarchy repository on GitHub, and the wallpaper then follows the
   theme, to the same number or the nearest one a shorter list has. The browser
-  needs an internet connection for that, the router does not. *Your image* takes
+  needs an internet connection for that, the router does not. The tick box at
+  the top of the list of themes switches the same thing on and off. While it is
+  on, pointing at a theme for a quarter of a second downloads that theme's
+  wallpaper and shows it; the blurred colours of the theme stand in until it has
+  arrived. Passing over the list downloads nothing. *Your image* takes
   a picture from your computer. A picture is scaled down to at most 1920 pixels
   so that it fits into the storage of the browser. With a picture behind them the
   windows are less see-through, since a picture can be anything: their opacity is
@@ -246,7 +252,10 @@ applied by the test page, for anything sticking out of a page or a window and fo
 text lying on the bare backdrop. Also the fastfetch window in a dark and a light
 theme, the bars staying in place, the list of themes and trying one on, the
 settings panel, and downloading a wallpaper and finding it again on the next page
-load. The Internet and Devices windows ran against a made-up WAN connection and
+load. Trying themes on with Omarchy's wallpapers, by pointer and by the arrow keys
+of the launcher: only the theme pointed at long enough is downloaded, leaving the
+list or Esc puts the kept wallpaper back, and a failed download unticks the box
+again. The Internet and Devices windows ran against a made-up WAN connection and
 made-up leases in the rig.
 
 Not checked yet:

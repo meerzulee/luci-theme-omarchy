@@ -20,6 +20,14 @@ const SIZES = [ [ 1920, .8 ], [ 1600, .7 ], [ 1280, .6 ], [ 960, .5 ] ];
 const LIMIT = 1500000;
 const BLUR = 8;
 
+/* How long a theme has to be pointed at before its wallpaper is fetched, so
+   that passing over the list costs nothing. */
+const LINGER = 250;
+
+/* Omarchy's wallpapers fetched in this page, by address: trying themes on goes
+   back and forth over the same few. */
+const fetched = {};
+
 return baseclass.extend({
 	__init__() {
 		this.look = {};
@@ -86,10 +94,23 @@ return baseclass.extend({
 
 			this.look.wall = kind;
 			this.save();
-			this.show(data, kind);
+
+			/* a theme tried on in the meantime keeps its own picture up */
+			if (!this.trying)
+				this.show(data, kind);
+
 			this.mark();
 			this.say('');
 		}, this));
+	},
+
+	stored() {
+		try {
+			return JSON.parse(localStorage.getItem(WALL));
+		}
+		catch (e) {
+			return null;
+		}
 	},
 
 	pick(ev) {
@@ -108,11 +129,10 @@ return baseclass.extend({
 	},
 
 	/* A wallpaper Omarchy has for a theme. The package does not contain these:
-	   the browser fetches one from GitHub when asked to, and keeps it. Without a
-	   number it is the one chosen last, or the nearest a shorter list has. */
-	loadOmarchy(id, index) {
-		this.say(_('Downloading…'));
-
+	   the browser fetches them from GitHub, only once Omarchy's wallpapers have
+	   been asked for. Without a number it is the one chosen last, or the nearest
+	   a shorter list has. Resolves to { pick, blob, src }. */
+	fetchOmarchy(id, index) {
 		return L.require('omarchy-palettes').then(L.bind(function(data) {
 			const entry = data.list.filter(function(p) { return p.id == id })[0];
 			const walls = entry ? entry.walls : [];
@@ -120,19 +140,83 @@ return baseclass.extend({
 			if (!walls.length)
 				throw new Error('no wallpaper');
 
-			this.look.pick = Math.min((index != null) ? index : (this.look.pick || 0), walls.length - 1);
+			const pick = Math.min((index != null) ? index : (this.look.pick || 0), walls.length - 1);
+			const url = OMARCHY + encodeURIComponent(id) + '/backgrounds/' + encodeURIComponent(walls[pick]);
 
-			return fetch(OMARCHY + encodeURIComponent(id) + '/backgrounds/' + encodeURIComponent(walls[this.look.pick]));
-		}, this)).then(function(res) {
-			if (!res.ok)
-				throw new Error('HTTP ' + res.status);
+			/* no referrer: GitHub has no business with the address of the router */
+			if (!fetched[url])
+				fetched[url] = fetch(url, { referrerPolicy: 'no-referrer' }).then(function(res) {
+					if (!res.ok)
+						throw new Error('HTTP ' + res.status);
 
-			return res.blob();
-		}).then(L.bind(function(blob) {
-			return this.store(blob, 'omarchy', id);
+					return res.blob();
+				}).then(function(blob) {
+					return { blob: blob, src: URL.createObjectURL(blob) };
+				}).catch(function(err) {
+					delete fetched[url];
+					throw err;
+				});
+
+			return fetched[url].then(function(got) {
+				return { pick: pick, blob: got.blob, src: got.src };
+			});
+		}, this));
+	},
+
+	/* Puts up and keeps a wallpaper of Omarchy's. */
+	loadOmarchy(id, index) {
+		/* a choice ends trying themes on */
+		this.trying = null;
+		clearTimeout(this.wait);
+		this.say(_('Downloading…'));
+
+		return this.fetchOmarchy(id, index).then(L.bind(function(got) {
+			this.look.pick = got.pick;
+
+			return this.store(got.blob, 'omarchy', id);
 		}, this)).catch(L.bind(function() {
+			this.mark();
 			this.say(_('Could not download the wallpaper. This needs an internet connection in this browser.'));
 		}, this));
+	},
+
+	/* Trying a theme on brings its wallpaper along while Omarchy's wallpapers
+	   are in use. The colours of the theme stand in until the picture is there. */
+	tryOn(id) {
+		if (this.look.wall != 'omarchy')
+			return;
+
+		const token = this.trying = {};
+		const kept = this.stored();
+
+		clearTimeout(this.wait);
+
+		if (kept && kept.kind == 'omarchy' && kept.id == id) {
+			this.show(kept.data, 'omarchy');
+			return;
+		}
+
+		this.show(null);
+		this.wait = setTimeout(L.bind(function() {
+			this.fetchOmarchy(id).then(L.bind(function(got) {
+				if (this.trying === token)
+					this.show(got.src, 'omarchy');
+			}, this)).catch(function() {});
+		}, this), LINGER);
+	},
+
+	/* Back to the wallpaper that is kept. */
+	untry() {
+		clearTimeout(this.wait);
+
+		if (!this.trying)
+			return;
+
+		this.trying = null;
+
+		const wall = (this.look.wall && this.look.wall != 'colors') ? this.stored() : null;
+
+		this.show(wall ? wall.data : null, this.look.wall);
 	},
 
 	current() {
@@ -205,6 +289,7 @@ return baseclass.extend({
 			row.setAttribute('aria-pressed', (row.getAttribute('data-id') == this.kept) ? 'true' : 'false');
 		}, this));
 
+		this.follow.checked = (this.look.wall == 'omarchy');
 		this.blurRow.hidden = (wall == 'colors');
 	},
 
@@ -304,7 +389,7 @@ return baseclass.extend({
 					'type': 'button',
 					'class': 'o-set-theme',
 					'data-id': p.id,
-					'mouseenter': function() { menu.paint(p.id) },
+					'mouseenter': function() { menu.paint(p.id, true) },
 					'click': L.bind(function() {
 						this.kept = p.id;
 						menu.keep(p.id);
@@ -320,8 +405,25 @@ return baseclass.extend({
 				]);
 			}, this));
 
+			/* the wallpapers of the themes, from here as well as from the settings */
+			this.follow = E('input', {
+				'type': 'checkbox',
+				'change': L.bind(function(ev) {
+					if (ev.target.checked)
+						this.loadOmarchy(this.kept);
+					else
+						this.useColours();
+				}, this)
+			});
+
+			this.followRow = E('label', {
+				'class': 'o-set-check',
+				'title': _('Downloads the wallpaper of a theme from Omarchy on GitHub when it is tried on or chosen')
+			}, [ this.follow, _("With Omarchy's wallpapers") ]);
+
 			this.themes = E('div', {}, [
 				E('h4', {}, [ _('Theme') ]),
+				this.followRow,
 				E('div', {
 					'class': 'o-set-themes',
 					'mouseleave': L.bind(function() { menu.paint(this.kept) }, this)
@@ -368,6 +470,9 @@ return baseclass.extend({
 			this.part = part;
 			this.themes.hidden = (part != 'theme');
 			this.settings.hidden = (part == 'theme');
+
+			/* what a download says shows under the control that started it */
+			((part == 'theme') ? this.followRow : this.blurRow).after(this.status);
 			this.box.setAttribute('aria-label', (part == 'theme') ? _('Theme') : _('Settings'));
 
 			this.fillWalls();
